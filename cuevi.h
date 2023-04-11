@@ -4,24 +4,8 @@
 #include <cassert>
 #include <random>
 #include <vector>
-
-typedef std::vector<double> Parameters;
-typedef std::vector<double> Data;
-
-auto operator+(const Parameters &x, const Parameters &y) {
-  assert((x.size() == y.size()) && "sum of vector fields of different sizes");
-  auto out = x;
-  for (std::size_t i = 0; i < x.size(); ++i)
-    out[i] = x[i] + y[i];
-  return out;
-}
-auto operator-(const Parameters &x, const Parameters &y) {
-  assert((x.size() == y.size()) && "sum of vector fields of different sizes");
-  auto out = x;
-  for (std::size_t i = 0; i < x.size(); ++i)
-    out[i] = x[i] - y[i];
-  return out;
-}
+#include "mcmc.h"
+#include "parallel_tempering.h"
 
 auto stretch_move(const Parameters &Xk, const Parameters &Xj, double z) {
   assert((Xj.size() == Xk.size()) && "sum of vector fields of different sizes");
@@ -31,9 +15,6 @@ auto stretch_move(const Parameters &Xk, const Parameters &Xj, double z) {
   return out;
 }
 
-typedef std::vector<std::size_t> Indexes;
-
-using IndexedData = std::pair<Indexes, Data>;
 
 auto random_portion_of_Index(const Indexes &indexes, std::mt19937_64 &mt,
                              double portion) {
