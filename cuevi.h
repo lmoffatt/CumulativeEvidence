@@ -1,54 +1,39 @@
 #ifndef CUEVI_H
 #define CUEVI_H
-#include "list.h"
-#include "range.h"
-#include "vector_field.h"
 #include <algorithm>
+#include <cassert>
 #include <random>
 #include <vector>
 
 typedef std::vector<double> Parameters;
 typedef std::vector<double> Data;
 
-template <class T>
-concept Variables = requires(T a) {
-  { a[int{}] } -> std::regular;
-  { a.size() } -> std::convertible_to<std::size_t>;
-};
+auto operator+(const Parameters &x, const Parameters &y) {
+  assert((x.size() == y.size()) && "sum of vector fields of different sizes");
+  auto out = x;
+  for (std::size_t i = 0; i < x.size(); ++i)
+    out[i] = x[i] + y[i];
+  return out;
+}
+auto operator-(const Parameters &x, const Parameters &y) {
+  assert((x.size() == y.size()) && "sum of vector fields of different sizes");
+  auto out = x;
+  for (std::size_t i = 0; i < x.size(); ++i)
+    out[i] = x[i] - y[i];
+  return out;
+}
+
+auto stretch_move(const Parameters &Xk, const Parameters &Xj, double z) {
+  assert((Xj.size() == Xk.size()) && "sum of vector fields of different sizes");
+  auto out = Xj;
+  for (std::size_t i = 0; i < Xj.size(); ++i)
+    out[i] += z * (Xk[i] - Xj[i]);
+  return out;
+}
 
 typedef std::vector<std::size_t> Indexes;
 
 using IndexedData = std::pair<Indexes, Data>;
-
-template <class T>
-concept sample_Parameters = requires(T a) {
-  { a(std::declval<std::mt19937_64 &>()) } -> std::convertible_to<Parameters>;
-};
-
-template <class T, class Variable>
-concept samples_Data = requires(T a) {
-  {
-    a(std::declval<std::mt19937_64 &>(), Parameters{}, Variable{})
-  } -> std::convertible_to<IndexedData>;
-  { Variable{} } -> Variables;
-};
-
-template <class T>
-concept calculates_PriorProb = requires(T a) {
-  { a(Parameters{}) } -> std::convertible_to<double>;
-};
-
-template <class T, class Variable>
-concept calculates_Likelihood = requires(T a) {
-  { a(Parameters{}, IndexedData{}, Variable{}) } -> std::convertible_to<double>;
-  { Variable{} } -> Variables;
-};
-
-template <class T, class Variable>
-concept BayesianModel =
-    sample_Parameters<T> && samples_Data<T, Variable> &&
-    calculates_PriorProb<T> && calculates_Likelihood<T, Variable> &&
-    Variables<Variable> && has_size<T>;
 
 auto random_portion_of_Index(const Indexes &indexes, std::mt19937_64 &mt,
                              double portion) {
@@ -81,70 +66,41 @@ struct initseed {
   constexpr static std::string name() { return "initseed"; }
 };
 
+auto calc_seed(typename std::mt19937_64::result_type initseed) {
 
-template <class L>
-requires includes_this<L, m<initseed, std::size_t>>
-auto calc_seed(L&& li) {
-
-  if (li[initseed{}]() == 0) {
+  if (initseed == 0) {
     std::random_device rd;
-    li[initseed{}]() = rd();
-  }
-  return li;
+    std::uniform_int_distribution<typename std::mt19937_64::result_type> useed;
+
+    return useed(rd);
+  } else
+    return initseed;
 }
 
-struct mt {
-  constexpr static std::string name() { return "mt"; }
-};
-
-template <class L>
-requires includes_this<L,  m<initseed, std::size_t>>&&
-    std::is_same_v<L,std::decay_t<L>>
-auto init_mt(L&& li) {
-  li=calc_seed(std::move(li));
-  return std::move(li)&m(mt{},std::mt19937_64(li[initseed{}]()));
+auto init_mt(typename std::mt19937_64::result_type initseed) {
+  initseed = calc_seed(initseed);
+  return std::mt19937_64(initseed);
 }
-struct mts {
-  constexpr static std::string name() { return "mts"; }
-};
 
-
-auto init_mt_vector(std::mt19937_64 &mt, std::size_t n) {
+auto init_mts(std::mt19937_64 &mt, std::size_t n) {
   std::uniform_int_distribution<typename std::mt19937_64::result_type> useed;
   std::vector<std::mt19937_64> out;
+  out.reserve(n);
   for (std::size_t i = 0; i < n; ++i)
     out.emplace_back(useed(mt));
   return out;
 }
 
-struct jump_factor {
-  constexpr static std::string name() { return "jump_factor"; }
-};
-struct stops_at {
-  constexpr static std::string name() { return "stops_at"; }
-};
-
-struct includes_zero {
-  constexpr static std::string name() { return "includes_zero"; }
-};
-struct beta {
-  constexpr static std::string name() { return "beta"; }
-};
-
-template <class L>
-  requires includes_this<L, m<jump_factor, double>> &&
-           includes_this<L, m<stops_at, double>> &&
-           includes_this<L, m<includes_zero, bool>>
-auto get_beta_list(const L &li) {
-  std::size_t num_beta =
-      std::ceil(std::log(li[stops_at{}]()) / std::log(li[jump_factor{}]())) + 1;
+auto get_beta_list(double jump_factor, double stops_at, bool includes_zero) {
+  std::size_t num_beta = std::ceil(stops_at / std::log(jump_factor)) + 1;
 
   auto beta_size = num_beta;
-  if (li[includes_zero{}]())
+  if (includes_zero)
     beta_size = beta_size + 1;
 
-  auto out = range(beta_size) |
-             [li](std::size_t i) { return std::pow(li[jump_factor{}](), i); };
+  auto out = std::vector<double>(beta_size, 0.0);
+  for (std::size_t i = 0; i < beta_size; ++i)
+    out[beta_size-1-i] = std::pow(jump_factor, i);
   return out;
 }
 
@@ -152,38 +108,41 @@ template <class T> using ensemble = std::vector<T>;
 template <class T> using by_fraction = std::vector<T>;
 template <class T> using by_beta = std::vector<T>;
 
-template <class L, Variables Variable>
-  requires includes_this<L, m<beta, by_beta<double>>>
-auto init_parameters(L &&li, BayesianModel<Variable> auto const &model,
-                     by_beta<ensemble<std::mt19937_64>> &mts) {
+using sample_Parameters = auto (*)(std::mt19937_64 &) -> Parameters;
 
-  auto out = by_beta<ensemble<Parameters>>(mts.size());
-  for (std::size_t i = 0; i < out.size(); ++i) {
-    out[i] = ensemble<Parameters>(mts[i].size());
-    for (std::size_t j = 0; j < out[i].size(); ++j) {
-      out[i][j] = model(mts[i][j]);
-    }
-  }
-  return out;
+template <class Variable>
+using samples_Data = auto (*)(std::mt19937_64 &, const Parameters &,
+                              const Variable &) -> IndexedData;
+
+using calculates_PriorProb = auto (*)(const Parameters &) -> double;
+
+template <class Variable>
+using calculates_Likelihood = auto (*)(const Parameters &, const IndexedData &,
+                                       const Variable &) -> double;
+
+auto init_parameters(std::mt19937_64 &mts, sample_Parameters model) {
+  return model(mts);
 }
 
-struct parameters {
-  constexpr static std::string name() { return "parameters"; }
-};
+auto calc_prior(calculates_PriorProb priorfunct, const Parameters &par) {
+  return priorfunct(par);
+}
 
-struct logPrior {
-  constexpr static std::string name() { return "logPrior"; }
-};
+template <class Variable>
+auto calc_lik(calculates_Likelihood<Variable> likfunct, const Parameters &par,
+              const IndexedData &y, const Variable &x) {
+  return likfunct(par, y, x);
+}
 
-struct logLik {
-  constexpr static std::string name() { return "logLik"; }
+struct mcmc {
+  Parameters parameter;
+  double logP;
+  double logL;
 };
 
 struct thermo_mcmc {
-  by_beta<double> beta;
-  by_beta<ensemble<Parameters>> parameter;
-  by_beta<ensemble<double>> logP;
-  by_beta<ensemble<double>> logL;
+  ensemble<by_beta<mcmc>> walkers;
+  ensemble<by_beta<std::size_t>> i_walkers;
 };
 
 struct cuevi_mcmc {
@@ -196,31 +155,253 @@ struct cuevi_mcmc {
   by_beta<ensemble<double>> logL_1;
 };
 
-template <Variables Variable>
-auto init_zero_mcmc(BayesianModel<Variable> auto const &model,
-                    const Variable &v, const Data &y,
-                    std::size_t number_of_jumps_per_decade,
-                    std::size_t number_sub_jumps_per_sample_group,
-                    double min_sample, bool use_beta_zero,
-                    std::size_t initseed) {}
-
-template <Variables Variable, class L>
-  requires includes_this<L, m<jump_factor, double>> &&
-           includes_this<L, m<stops_at, double>> &&
-           includes_this<L, m<includes_zero, bool>> &&
-           includes_this<L, m<initseed, std::size_t>>
-
-auto cuevi_impl(BayesianModel<Variable> auto const &model, const Variable &v,
-                const Data &y, const L &li,
-                std::size_t number_of_jumps_per_decade,
-                std::size_t number_sub_jumps_per_sample_group,
-                double min_sample, bool use_beta_zero, std::size_t initseed) {
-  auto mt = init_mt(li);
-
-  auto beta = get_beta_list()
-
-      auto indexesList = generate_Indexes(mt, y.size(), model.size(),
-                                          number_of_jumps_per_decade)
+template <class Variable>
+auto init_mcmc(std::mt19937_64 &mt, sample_Parameters modelsample,
+               calculates_PriorProb priorfunction,
+               calculates_Likelihood<Variable> likfunction,
+               const IndexedData &y, const Variable &x) {
+  auto par = modelsample(mt);
+  double logP = priorfunction(par);
+  double logL = likfunction(par, y, x);
+  return mcmc{std::move(par), logP, logL};
 }
+
+
+template <class Variable>
+auto init_thermo_mcmc(std::size_t n_walkers,
+                      std::size_t n_beta,
+                      ensemble<std::mt19937_64> &mt,
+                      sample_Parameters modelsample,
+                      calculates_PriorProb priorfunction,
+                      calculates_Likelihood<Variable> likfunction,
+                      const IndexedData &y, const Variable &x) {
+
+  ensemble<by_beta<std::size_t>> i_walker(n_walkers,
+                                          by_beta<std::size_t>(n_beta));
+  ensemble<by_beta<mcmc>> walker(n_walkers, by_beta<mcmc>(n_beta));
+
+  for (std::size_t half=0; half<2; ++half)
+#pragma omp parallel for
+  for (std::size_t iiw = 0; iiw < n_walkers/2; ++iiw) {
+    auto iw=iiw+half*n_walkers/2;
+    for (std::size_t i = 0; i < n_beta; ++i) {
+      i_walker[iw][i] = iw + i * n_walkers;
+      walker[iw][i] =
+          init_mcmc(mt[iiw], modelsample, priorfunction, likfunction, y, x);
+    }
+  }
+  return thermo_mcmc{walker, i_walker};
+}
+
+template <class Conditions>
+using checks_convergence = auto (*)(Conditions &&cond, const thermo_mcmc &)
+    -> std::pair<Conditions, bool>;
+
+std::pair<std::pair<std::size_t,std::size_t>, bool> check_iterations(std::pair<std::size_t,std::size_t> current_max,const thermo_mcmc&)
+{
+  if (current_max.first>=current_max.second)
+      return std::pair(std::pair(0ul,current_max.second),true);
+  else
+      return std::pair(std::pair(current_max.first+1,current_max.second),false);
+};
+
+
+
+using walker_distribution =
+    ensemble<std::uniform_int_distribution<std::size_t>>;
+
+using z_stretch_distribution = ensemble<std::uniform_real_distribution<double>>;
+
+using p_distribution = ensemble<std::uniform_real_distribution<double>>;
+
+template <class Variable>
+auto &step_stretch_thermo_mcmc(const by_beta<double>& beta,
+    ensemble<std::mt19937_64> &mt,
+                               thermo_mcmc &current,
+                               calculates_PriorProb priorfunction,
+                               calculates_Likelihood<Variable> likfunction,
+                               const IndexedData &y, const Variable &x,
+                               double alpha_stretch = 2) {
+  auto n_walkers = mt.size();
+  auto n_beta = beta.size();
+  auto n_par = current.walkers[0][0].parameter.size();
+
+  std::uniform_int_distribution<std::size_t> uniform_walker(0, n_walkers / 2);
+  std::vector<std::uniform_int_distribution<std::size_t>> udist(n_walkers,
+                                                                uniform_walker);
+
+  std::uniform_real_distribution<double> uniform_stretch_zdist(
+      1.0 / alpha_stretch, alpha_stretch);
+  std::vector<std::uniform_real_distribution<double>> zdist(
+      n_walkers, uniform_stretch_zdist);
+
+  std::uniform_real_distribution<double> uniform_real(0, 1);
+  std::vector<std::uniform_real_distribution<double>> rdist(n_walkers,
+                                                            uniform_real);
+
+  for (bool half : {false, true})
+#pragma omp parallel for
+    for (std::size_t i = 0; i < n_walkers / 2; ++i) {
+      auto iw = half ? i + n_walkers / 2 : i;
+      auto j = udist[i](mt[i]);
+      auto jw = half ? j : j + n_walkers / 2;
+      for (std::size_t ib = 0; ib < n_beta; ++ib) {
+        // we can try in the outer loop
+
+        auto z = zdist[i](mt[i]);
+        auto r = rdist[i](mt[i]);
+
+        // candidate[ib].walkers[iw].
+        auto ca_par = stretch_move(current.walkers[iw][ib].parameter,
+                                   current.walkers[jw][ib].parameter, z);
+        auto ca_logP = priorfunction(ca_par);
+        auto ca_logL = likfunction(ca_par, y, x);
+        auto dthLogL =
+            ca_logP - current.walkers[iw][ib].logP +
+            beta[ib] * (ca_logL - current.walkers[iw][ib].logL);
+        auto pJump = std::min(1.0, std::pow(z, n_par - 1) * std::exp(dthLogL));
+        if (pJump > r) {
+          current.walkers[iw][ib].parameter = std::move(ca_par);
+          current.walkers[iw][ib].logP = ca_logP;
+          current.walkers[iw][ib].logL = ca_logL;
+        }
+      }
+    }
+  return current;
+}
+
+auto &thermo_jump_mcmc(const by_beta<double>& beta,
+                       std::mt19937_64 &mt, ensemble<std::mt19937_64> &mts,
+                       thermo_mcmc &current) {
+  std::uniform_real_distribution<double> uniform_real(0, 1);
+  auto n_walkers = mts.size();
+  auto n_beta = beta.size();
+  auto n_par = current.walkers[0][0].parameter.size();
+  std::uniform_int_distribution<std::size_t> booldist(0, 1);
+  auto half = booldist(mt) == 1;
+
+  Indexes landing_walker(n_walkers / 2);
+  std::iota(landing_walker.begin(), landing_walker.end(), 0);
+  std::shuffle(landing_walker.begin(), landing_walker.end(), mt);
+  std::vector<std::uniform_real_distribution<double>> rdist(n_walkers,
+                                                            uniform_real);
+
+#pragma omp parallel for
+  for (std::size_t i = 0; i < n_walkers / 2; ++i) {
+    auto iw = half ? i + n_walkers / 2 : i;
+    auto j = landing_walker[i];
+    auto jw = half ? j : j + n_walkers / 2;
+    for (std::size_t ib = 0; ib < n_beta - 1; ++ib) {
+
+      auto r = rdist[i](mts[i]);
+      double logA =
+          -(beta[ib] - beta[ib + 1]) *
+          (current.walkers[iw][ib].logL - current.walkers[jw][ib + 1].logL);
+      auto pJump = std::min(1.0, std::exp(logA));
+      if (pJump > r) {
+        std::swap(current.walkers[iw][ib], current.walkers[jw][ib + 1]);
+        std::swap(current.i_walkers[iw][ib], current.i_walkers[jw][ib + 1]);
+      }
+    }
+  }
+  return current;
+}
+
+
+template<class Variable>
+auto push_back_new_beta(thermo_mcmc& current, ensemble<std::mt19937_64>& mts, sample_Parameters modelsample,
+                   calculates_PriorProb priorfunction,
+                   calculates_Likelihood<Variable> likfunction,
+                   const IndexedData &y, const Variable &x)
+{
+  auto n_walkers=current.walkers.size();
+  auto n_beta_old=current.walkers[0].size();
+  for (std::size_t half=0; half<2; ++half)
+  for (std::size_t i=0; i<n_walkers/2; ++i)
+  {
+      auto iw= i+ half*n_walkers/2;
+      current.walkers[iw].push_back(init_mcmc(mts[i],modelsample,priorfunction,likfunction,y,x));
+      current.i_walkers[iw].push_back(n_beta_old*n_walkers+iw);
+  }
+  return current;
+}
+
+
+
+template <class Variable, class ConvergenceConditions>
+auto thermo_impl(sample_Parameters modelsample,
+                 calculates_PriorProb priorfunction,
+                 calculates_Likelihood<Variable> likfunction,
+                 checks_convergence<ConvergenceConditions> does_converge,
+                 ConvergenceConditions converge_cond, const IndexedData &y,
+                 const Variable &x, std::size_t num_scouts_per_ensemble,
+                 double jump_factor, double stops_at, bool includes_zero,
+                 std::size_t initseed) {
+
+  auto mt = init_mt(initseed);
+  auto n_walkers= num_scouts_per_ensemble;
+  auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
+
+  auto beta = get_beta_list(jump_factor, stops_at, includes_zero);
+
+
+
+  auto n_beta=beta.size();
+
+  auto beta_run = by_beta<double>(beta.rend()-2, beta.rend());
+
+  auto current = init_thermo_mcmc(n_walkers,beta_run.size(),mts,  modelsample, priorfunction,
+                                  likfunction, y, x);
+
+  auto n_par = current.walkers[0][0].parameter.size();
+
+  auto mcmc_run = does_converge(converge_cond, current);
+
+  std::size_t thermo_jumps_every = n_par;
+
+
+  while (beta_run.size() < beta.size() || !mcmc_run.second) {
+    while (!mcmc_run.second) {
+      for (std::size_t i_p = 0; i_p < thermo_jumps_every; ++i_p) {
+        current = step_stretch_thermo_mcmc(beta_run,mts, current, priorfunction,
+                                           likfunction, y, x);
+        mcmc_run = does_converge(mcmc_run.first, current);
+      }
+      current = thermo_jump_mcmc(beta_run,mt, mts, current);
+      mcmc_run = does_converge(mcmc_run.first, current);
+    }
+    if (beta_run.size()<beta.size())
+    {
+      beta_run.insert(beta_run.begin(),beta[beta_run.size()]);
+      current=push_back_new_beta(current,mts,modelsample,priorfunction,likfunction,y,x);
+      mcmc_run = does_converge(mcmc_run.first, current);
+    }
+
+  }
+
+  return std::pair(mcmc_run,current);
+
+}
+
+
+
+
+template <class Variable, class ConvergenceConditions>
+auto thermo_max_iter(sample_Parameters modelsample,
+                 calculates_PriorProb priorfunction,
+                 calculates_Likelihood<Variable> likfunction,
+                  const IndexedData &y,
+                 const Variable &x, std::size_t num_scouts_per_ensemble,
+                 double jump_factor, double stops_at, bool includes_zero,
+                 std::size_t initseed)
+{
+  return thermo_impl(modelsample,priorfunction,likfunction,check_iterations,   std::pair(0,1000),y,x,num_scouts_per_ensemble,jump_factor,stops_at,includes_zero,initseed);
+}
+
+
+
+
+
+
 
 #endif // CUEVI_H
