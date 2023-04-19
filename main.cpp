@@ -2,21 +2,42 @@
 #include "mcmc.h"
 #include "lapack_headers.h"
 #include <iostream>
-
+#include "bayesian_linear_regression.h"
 //using namespace std;
 
 int main()
 {
     auto initseed=0;
     auto mt=init_mt(initseed);
-    auto cov=random_covariance(mt,5,{200,1,1,1,1});
+    auto cov=random_covariance(mt,5,{200,1,1,1,0.005});
+
+    auto X=random_matrix_normal(mt,5,5);
+    std::cout<<"X"<<X;
+    auto [Q,R]=qr(X);
+    std::cout<<"Q"<<Q;
+    std::cout<<"R"<<R;
+
 
 
 
 
     std::cout << "Hello World!" << std::endl;
-    std::cout<<cov;
+    std::cout<<"cov"<<cov;
+
     auto covInv=inv(cov);
+    std::cout<<"covInv"<<covInv.value();
+    std::cout<<"cov*covInv=\n"<<cov*covInv.value();
+
+    auto cho=cholesky(cov);
+    std::cout<<"cholesky"<<cho.value();
+    std::cout<<"cholesky tr"<<tr(cho.value());
+
+    std::cout<<"cholesky squared"<<tr(cho.value())*cho.value();
+    std::cout<<"cholesky test"<<tr(cho.value())*cho.value()-cov;
+
+
+
+
     if (covInv)
         std::cout<<"cov inv="<<covInv.value();
     else

@@ -30,32 +30,26 @@ auto random_matrix_exponential(std::mt19937_64& mt,std::size_t nrows,std::size_t
 auto random_covariance(std::mt19937_64& mt, std::size_t ndim, std::initializer_list<double> sigmas )
 {
     auto X=random_matrix_normal(mt,ndim,ndim);
-    std::cout<<"X"<<X;
     auto [Q,R]=qr(X);
-    std::cout<<"Q"<<Q;
-    std::cout<<"R"<<R;
-
-
-    auto s=diag(std::move(sigmas));
-    std::cout<<"s"<<s;
-
-    auto cov=Q*s*s*tr(Q);
-    std::cout<<"Q*tr(Q)"<<Q*tr(Q);
-    std::cout<<"cov"<<cov;
-
+    auto s=diagpos(std::move(sigmas));
+    auto cov=AT_D_A(Q,s);
     return cov;
 }
 
 
 
-auto correlation_matrix(const Matrix<double>& x)
+auto correlation_matrix(const SymPosDefMatrix<double>& x)
 {
-    auto out=Matrix<double>(x.nrows(),x.ncols(),false);
+    auto out=SymPosDefMatrix<double>(x.nrows(),false);
     for (std::size_t i=0; i<out.nrows(); ++i)
         for(std::size_t j=0; j<out.ncols(); ++j)
             out(i,j)=x(i,j)/std::sqrt(x(i,i))/std::sqrt(x(j,j));
     return out;
 }
+
+
+
+
 
 
 
