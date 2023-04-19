@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <string>
+#include <tuple>
 #include <variant>
 template <typename C, template <typename...> class V>
 struct is_of_this_template_type : std::false_type {};
@@ -51,7 +52,7 @@ template <class T> constexpr bool is_valid(const Maybe_error<T> &v) {
 
 template<class T>
 requires(!is_Maybe_error<T>)
- constexpr bool is_valid(T) { return true; }
+ constexpr bool is_valid(const T&) { return true; }
 
 
 template <class T>
@@ -64,6 +65,9 @@ template <class T> auto &get_value(const Maybe_error<T> &x) {
   return x.value();
 }
 
+template <class T> T get_value( Maybe_error<T> &&x) {
+  return std::move(x.value());
+}
 
 
 template<class C, class T>
@@ -108,6 +112,16 @@ public:
     else
       return std::get<1>(*this);
   }
+
+
+  friend std::ostream& operator<<(std::ostream &os, const Maybe_error& x)
+  {
+    if (x)
+      os<<x.value();
+    else
+      os<<x.error();
+  }
+
 };
 
 template <class T, class S>
@@ -142,12 +156,22 @@ requires(is_Maybe_error<T> || is_Maybe_error<S>)
 
 template <class T, class S>
 requires(is_Maybe_error<T> || is_Maybe_error<S>)
-    auto xtAx(const T &x, const S &y) {
+auto xtAx(const T &x, const S &y) {
   if (is_valid(x) && is_valid(y))
     return Maybe_error(xtAx(get_value(x),get_value(y)));
   else
     return Maybe_error<std::decay_t<decltype(xtAx(get_value(x),get_value(y)))>>(
         get_error(x) + " xtAx " + get_error(y));
+}
+
+template <class T, class S>
+requires(is_Maybe_error<T> || is_Maybe_error<S>)
+    auto xAxt(const T &x, const S &y) {
+  if (is_valid(x) && is_valid(y))
+    return Maybe_error(xAxt(get_value(x),get_value(y)));
+  else
+    return Maybe_error<std::decay_t<decltype(xtAx(get_value(x),get_value(y)))>>(
+        get_error(x) + " xAxt " + get_error(y));
 }
 
 
@@ -174,6 +198,17 @@ auto inv(const T &x) {
   else
     return return_type(x.error()+"\n inverse");
 }
+
+template <class T>
+requires(is_Maybe_error<T>)
+    auto operator-(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(-(x.value()))>>;
+  if (x)
+    return return_type(-(x.value()));
+  else
+    return return_type(x.error()+"\n minus");
+}
+
 
 template <class T>
 requires(is_Maybe_error<T>)
@@ -207,6 +242,16 @@ requires(is_Maybe_error<T>)
     return return_type(x.error()+"\n log");
 }
 
+template <class T>
+requires(is_Maybe_error<T>)
+    auto tr(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(tr(x.value()))>>;
+  if (x)
+    return return_type(tr(x.value()));
+  else
+    return return_type(x.error()+"\n transpose");
+}
+
 
 template <class T, auto ...F> struct return_error {
   std::string function_label;
@@ -216,6 +261,14 @@ template <class T, auto ...F> struct return_error {
 
 
 
+
 };
+
+
+template<class... Ts>
+std::ostream& operator<<(std::ostream& os, const std::tuple<Ts...>& tu)
+{
+  return std::apply([&os](auto&... x)->std::ostream& {((os<<x<<"\n"),...);return os; },tu);
+}
 
 #endif // MAYBE_ERROR_H

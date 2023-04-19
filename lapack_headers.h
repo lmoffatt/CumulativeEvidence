@@ -1305,7 +1305,7 @@ Parameters
 extern "C" void dsyrk_(char *UPLO, char *TRANS, int *N, int *K, double *ALPHA,
                        double *A, int *LDA, double *BETA, double *C, int *LDC);
 
-auto &Lapack_Product_Self_Transpose_mod(const Matrix<double> a,
+auto &Lapack_Product_Self_Transpose_mod(const Matrix<double>& a,
                                         SymPosDefMatrix<double> &c,
                                         bool first_transposed_in_c,
                                         char UPLO_in_c = 'U', double alpha = 1,
@@ -1342,7 +1342,7 @@ auto &Lapack_Product_Self_Transpose_mod(const Matrix<double> a,
 
 */
 
-  int N = a.nrows();
+  int N = c.nrows();
   /*      [in]	N
 
                 N is INTEGER
@@ -1482,7 +1482,7 @@ Parameters
  * */
 
 SymPosDefMatrix<double>
-Lapack_Product_Self_Transpose(const Matrix<double> a,
+Lapack_Product_Self_Transpose(const Matrix<double>& a,
                               bool first_transposed_in_c, char UPLO_in_c,
                               double alpha, double beta) {
   std::size_t n = first_transposed_in_c ? a.ncols() : a.nrows();

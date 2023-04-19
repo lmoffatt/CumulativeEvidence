@@ -27,15 +27,23 @@ auto random_matrix_exponential(std::mt19937_64& mt,std::size_t nrows,std::size_t
 
 
 
-auto random_covariance(std::mt19937_64& mt, std::size_t ndim, std::initializer_list<double> sigmas )
+//auto random_covariance(std::mt19937_64& mt, std::size_t ndim, std::initializer_list<double> sigmas )
+//{
+//    auto X=random_matrix_normal(mt,ndim,ndim);
+//    auto [Q,R]=qr(X);
+//    auto s=diagpos(std::move(sigmas));
+//    auto cov=AT_D_A(Q,s);
+//    return cov;
+//}
+
+auto random_covariance(std::mt19937_64& mt, std::size_t ndim, const Matrix<double>& sigmas )
 {
     auto X=random_matrix_normal(mt,ndim,ndim);
     auto [Q,R]=qr(X);
-    auto s=diagpos(std::move(sigmas));
+    auto s=DiagPosDetMatrix(sigmas);
     auto cov=AT_D_A(Q,s);
     return cov;
 }
-
 
 
 auto correlation_matrix(const SymPosDefMatrix<double>& x)

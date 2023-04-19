@@ -31,7 +31,7 @@ Matrix<double> Lapack_Triang_Product(const Matrix<double> &a,
                                      double alpha = 1);
 
 SymPosDefMatrix<double>
-Lapack_Product_Self_Transpose(const Matrix<double> a,
+Lapack_Product_Self_Transpose(const Matrix<double>& a,
                               bool first_transposed_in_c, char UPLO_in_c = 'U',
                               double alpha = 1, double beta = 0);
 
@@ -184,7 +184,7 @@ public:
   }
 
   friend bool same_dimensions(const Matrix &x, const Matrix y) {
-    return x.size() == y.size() && x.ncols() == y.nrows() &&
+    return x.size() == y.size() && x.nrows() == y.nrows() &&
            x.ncols() == y.ncols();
   }
 
@@ -299,27 +299,6 @@ public:
 
   friend auto &tr(const SymmetricMatrix &a) { return a; }
 
-  friend auto xtAx(const Matrix<T> &x, const SymmetricMatrix &A) {
-    assert(x.nrows() == A.nrows());
-    auto out = T{};
-    for (std::size_t i = 0; i < A.nrows(); ++i) {
-      out += x[i] * A(i, i) * x[i];
-      for (std::size_t j = i + 1; j < A.ncols(); ++j)
-        out += 2 * x[i] * A(i, j) * x[j];
-    }
-    return out;
-  }
-
-  friend auto xAxt(const Matrix<T> &x, const SymmetricMatrix &A) {
-    assert(x.ncols() == A.nrows());
-    auto out = T{};
-    for (std::size_t i = 0; i < A.nrows(); ++i) {
-      out += x[i] * A(i, i) * x[i];
-      for (std::size_t j = i + 1; j < A.ncols(); ++j)
-        out += 2 * x[i] * A(i, j) * x[j];
-    }
-    return out;
-  }
 
   template <class F> friend auto apply(F &&f, SymmetricMatrix &&x) {
     for (std::size_t i = 0; i < x.size(); ++i)
@@ -339,6 +318,31 @@ public:
     return out;
   }
 };
+
+template <class T>
+auto xtAx(const Matrix<T> &x, const SymmetricMatrix<T> &A) {
+  assert(x.nrows() == A.nrows());
+  auto out = T{};
+  for (std::size_t i = 0; i < A.nrows(); ++i) {
+    out += x[i] * A(i, i) * x[i];
+    for (std::size_t j = i + 1; j < A.ncols(); ++j)
+      out += 2 * x[i] * A(i, j) * x[j];
+  }
+  return out;
+}
+
+template <class T>
+auto xAxt(const Matrix<T> &x, const SymmetricMatrix<T> &A) {
+  assert(x.ncols() == A.nrows());
+  auto out = T{};
+  for (std::size_t i = 0; i < A.nrows(); ++i) {
+    out += x[i] * A(i, i) * x[i];
+    for (std::size_t j = i + 1; j < A.ncols(); ++j)
+      out += 2 * x[i] * A(i, j) * x[j];
+  }
+  return out;
+}
+
 
 template <class F, class T> auto apply(F &&f, const SymmetricMatrix<T> &x) {
   SymmetricMatrix<T> out(x.nrows());
@@ -549,6 +553,7 @@ template <class T> class SymPosDefMatrix : public SymmetricMatrix<T> {
   explicit SymPosDefMatrix(Matrix<T> &&x) : base_type{std::move(x)} {}
 
 public:
+
   template<class K>
     friend Maybe_error<SymPosDefMatrix<K>>
     lapack::Lapack_UT_Cholesky_inv(const UpTrianMatrix<K> &x);
@@ -625,6 +630,11 @@ public:
       return Maybe_error<double>(chol.error() + " in calculation of logdet");
   }
 };
+template<class T>
+Maybe_error<DownTrianMatrix<T>> cholesky(const SymPosDefMatrix<T> &x);
+
+template<class T>
+Maybe_error<DiagPosDetMatrix<T>> cholesky(const DiagPosDetMatrix<T> &x);
 
 template <class T> class DiagonalMatrix {
 private:
@@ -644,10 +654,10 @@ public:
     for (std::size_t i = 0; i < size_; ++i)
       x_[i] = value;
   }
-  explicit DiagonalMatrix(std::initializer_list<T> &&a)
-      : size_{a.size()}, nrows_{a.size()}, ncols_{a.size()}, x_{new T[size_]} {
-    std::copy(a.begin(), a.end(), x_);
-  }
+//  explicit DiagonalMatrix(std::initializer_list<T> &&a)
+//      : size_{a.size()}, nrows_{a.size()}, ncols_{a.size()}, x_{new T[size_]} {
+//    std::copy(a.begin(), a.end(), x_);
+//  }
 
   explicit DiagonalMatrix(const Matrix<T> &a)
       : size_{(a.ncols() == 1 || a.nrows() == 1)
@@ -795,6 +805,13 @@ public:
     return out;
   }
 
+  friend auto xAxt(const Matrix<T> &x, const DiagonalMatrix &A) {
+    assert(x.ncols() == A.nrows());
+    auto out = T{};
+    for (std::size_t i = 0; i < A.nrows(); ++i)
+      out += x[i] * A(i, i) * x[i];
+    return out;
+  }
 
   template <class F>
     requires(!is_Maybe_error<std::invoke_result_t<F, T>>)
@@ -836,15 +853,19 @@ public:
     return os;
   }
 };
+template<class T>
+DiagPosDetMatrix<T> XTX(const DiagonalMatrix<T> &a);
 
 template <class T> class DiagPosDetMatrix : public DiagonalMatrix<T> {
+ private:
+  DiagPosDetMatrix(DiagonalMatrix<T>&& x):base_type{x}{}
 
 public:
   using base_type = DiagonalMatrix<T>;
   explicit DiagPosDetMatrix(std::size_t _nrows)
-      : base_type{_nrows, _nrows, false} {}
+      : base_type{_nrows,_nrows, false} {}
   explicit DiagPosDetMatrix(std::size_t _nrows, T value)
-      : base_type{_nrows, _nrows, value} {}
+      : base_type{_nrows,_nrows, value} {}
   explicit DiagPosDetMatrix(std::initializer_list<T> &&a)
       : base_type(std::move(a)) {}
 
@@ -856,6 +877,14 @@ public:
   using base_type::operator();
 
   ~DiagPosDetMatrix() {}
+
+  template<class T0>
+  friend DiagPosDetMatrix<T0> XXT(const DiagonalMatrix<T0> &a);
+
+  friend DiagPosDetMatrix<T> XTX(const DiagonalMatrix<T> &a){
+    return DiagPosDetMatrix<T>(a*a);
+  }
+
 
   friend auto operator*(const DiagPosDetMatrix &a, const DiagPosDetMatrix &b) {
     assert(a.ncols() == b.nrows() && "matrix product dimensions mismatch");
@@ -875,18 +904,20 @@ public:
 
 
   friend Maybe_error<DiagPosDetMatrix> cholesky(const DiagPosDetMatrix &a) {
-    return apply(
-        [](auto x) -> Maybe_error<double> {
-          if (x > 0)
-            return std::sqrt(x);
-          else if (x == 0)
-            return std::string("zero value");
-          else
-            return "sqrt of negative value " + std::to_string(x);
-        },
-        a);
+    DiagPosDetMatrix out(a.nrows());
+    for (std::size_t i=0; i<out.nrows(); ++i)
+      if (a(i,i) > 0)
+        out[i]=std::sqrt(a(i,i));
+      else if (a(i,i) == 0)
+        return std::string("zero value at")+ std::to_string(i);
+       else
+            return "sqrt of negative value " + std::to_string(a(i,i));
+    return out;
   }
 };
+
+template<class T>
+auto IdM(std::size_t ndim){return DiagPosDetMatrix<T>(ndim,T{1.0});}
 
 template<class T>
 auto inv_from_chol(const DownTrianMatrix<T>&x )
@@ -900,6 +931,27 @@ auto inv_from_chol(const UpTrianMatrix<T>&x )
   return lapack::Lapack_UT_Cholesky_inv(x);
 }
 
+template<class T>
+Maybe_error<DiagPosDetMatrix<T>> inv_from_chol(const DiagPosDetMatrix<T>&x )
+{
+  DiagPosDetMatrix<T> out(x.nrows());
+  for (std::size_t i=0; i<x.nrows(); ++i)
+    if (x(i,i)>0)
+      out[i]=std::pow(x(i,i),-2);
+   else return "error inverting chol";
+  return out;
+}
+
+template<class T>
+Maybe_error<DiagPosDetMatrix<T>> inv(const DiagPosDetMatrix<T>&x )
+{
+  DiagPosDetMatrix<T> out(x.nrows());
+  for (std::size_t i=0; i<x.nrows(); ++i)
+   if (out(i,i)>0)
+      out[i]=std::pow(x(i,i),-1);
+   else return std::string("error inverting chol");
+  return out;
+}
 
 template <class T> auto diag(const Matrix<T> &a) {
   return DiagonalMatrix<T>(a);
@@ -921,6 +973,14 @@ template <class T> auto qr(const Matrix<T> &a) { return lapack::Lapack_QR(a); }
 auto XXT(const Matrix<double> &a) {
   return lapack::Lapack_Product_Self_Transpose(a, false);
 }
+
+template<class T>
+auto XXT(const DiagonalMatrix<T> &a) {
+  return DiagPosDetMatrix<T>(a*a);
+}
+
+
+
 
 auto XTX(const Matrix<double> &a) {
   return lapack::Lapack_Product_Self_Transpose(a, true);

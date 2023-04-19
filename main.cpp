@@ -1,3 +1,4 @@
+#include "matrix.h"
 #include "matrix_random.h"
 #include "mcmc.h"
 #include "lapack_headers.h"
@@ -9,50 +10,48 @@ int main()
 {
     auto initseed=0;
     auto mt=init_mt(initseed);
-    auto cov=random_covariance(mt,5,{200,1,1,1,0.005});
 
-    auto X=random_matrix_normal(mt,5,5);
-    std::cout<<"X"<<X;
-    auto [Q,R]=qr(X);
-    std::cout<<"Q"<<Q;
-    std::cout<<"R"<<R;
+    auto npar= 5ul;
+    auto nsamples=1000ul;
+    auto log10_std_par =2.0;
 
+    auto mean_mean_par=0.0;
+    auto std_mean_par=10.0;
 
+    auto mean_b=0.0;
+    auto std_b=10.0;
 
+    auto par_stds=apply([] (auto& x) {return std::pow(10,x);},random_matrix_normal(mt,1,npar,0,log10_std_par));
+    auto cov_par=random_covariance(mt,npar,par_stds);
 
+    auto mean_par=random_matrix_normal(mt,1,npar,mean_mean_par,std_mean_par);
 
-    std::cout << "Hello World!" << std::endl;
-    std::cout<<"cov"<<cov;
+    auto b=random_matrix_normal(mt,npar,1,mean_b,std_b);
 
-    auto covInv=inv(cov);
-    std::cout<<"covInv"<<covInv.value();
-    std::cout<<"cov*covInv=\n"<<cov*covInv.value();
-
-    auto cho=cholesky(cov);
-    std::cout<<"cholesky"<<cho.value();
-    std::cout<<"cholesky tr"<<tr(cho.value());
-
-    std::cout<<"cholesky squared"<<tr(cho.value())*cho.value();
-    std::cout<<"cholesky test"<<tr(cho.value())*cho.value()-cov;
+    std::cerr<<"b proposed"<<b;
 
 
+    auto par_dist_=make_multivariate_normal_distribution(std::move(mean_par),std::move(cov_par));
+
+    auto par_dist=std::move(par_dist_.value());
+    auto X=par_dist(mt,nsamples);
+    auto y=X*b;
+
+    auto prior=make_multivariate_normal_distribution(Matrix<double>(1ul,npar,mean_b),IdM<double>(npar));
+
+    std::cout<<"mean"<<Matrix<double>(1ul,npar,mean_b);
+    std::cout<<"cov"<<IdM<double>(npar);
 
 
-    if (covInv)
-        std::cout<<"cov inv="<<covInv.value();
-    else
-        std::cout<<"cov inv="<<covInv.error();
-
-
-
-    auto corr=correlation_matrix(cov);
-    std::cout<<"corr"<<corr;
-    auto corrInv=correlation_matrix(covInv.value());
-    std::cout<<"corrInv"<<corrInv;
-
-    std::cout<<"max correlation    \t"<<reduce_ij([](auto one, auto i, auto j, auto two){return ((i!=j)&(std::abs(two)>std::abs(one)))?two:one; },corr,0)<<"\n";
-
-    std::cout<<"max correlation Inv\t"<<reduce_ij([](auto one, auto i, auto j, auto two){return ((i!=j)&(std::abs(two)>std::abs(one)))?two:one; },corrInv,0)<<"\n";
+    std::cout<<"prior"<<prior;
+    double prior_eps_df =1.0;
+    double prior_eps_variance =1.0;
+    if (prior.valid())
+    {
+        auto reg=bayesian_linear_regression(prior.value(),prior_eps_df,prior_eps_variance,y,X);
+        std::cout<<"bayes\n"<<reg;
+    }
+   // std::cout<<y;
 
     return 0;
 }
