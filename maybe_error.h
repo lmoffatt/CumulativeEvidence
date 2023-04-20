@@ -120,6 +120,7 @@ public:
       os<<x.value();
     else
       os<<x.error();
+    return os;
   }
 
 };
@@ -153,6 +154,17 @@ requires(is_Maybe_error<T> || is_Maybe_error<S>)
     return Maybe_error<std::decay_t<decltype(get_value(x) - get_value(y))>>(
         get_error(x) + " multiplies " + get_error(y));
 }
+
+template <class T, class S>
+requires(is_Maybe_error<T> || is_Maybe_error<S>)
+    auto operator/(const T &x, const S &y) {
+  if (is_valid(x) && is_valid(y))
+    return Maybe_error(get_value(x) / get_value(y));
+  else
+    return Maybe_error<std::decay_t<decltype(get_value(x) / get_value(y))>>(
+        get_error(x) + " divides " + get_error(y));
+}
+
 
 template <class T, class S>
 requires(is_Maybe_error<T> || is_Maybe_error<S>)
@@ -198,6 +210,24 @@ auto inv(const T &x) {
   else
     return return_type(x.error()+"\n inverse");
 }
+template <class T>
+requires(is_Maybe_error<T>)
+    auto diag(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(diag(x.value()))>>;
+  if (x)
+    return return_type(diag(x.value()));
+  else
+    return return_type(x.error()+"\n diag");
+}
+template <class T>
+requires(is_Maybe_error<T>)
+    auto XXT(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(XXT(x.value()))>>;
+  if (x)
+    return return_type(XXT(x.value()));
+  else
+    return return_type(x.error()+"\n diag");
+}
 
 template <class T>
 requires(is_Maybe_error<T>)
@@ -240,6 +270,16 @@ requires(is_Maybe_error<T>)
     return return_type(cholesky(x.value()));
   else
     return return_type(x.error()+"\n log");
+}
+using std::sqrt;
+template <class T>
+requires(is_Maybe_error<T>)
+    auto sqrt(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(sqrt(x.value()))>>;
+  if (x)
+    return return_type(sqrt(x.value()));
+  else
+    return return_type(x.error()+"\n sqrt");
 }
 
 template <class T>

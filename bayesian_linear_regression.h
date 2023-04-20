@@ -26,9 +26,11 @@ auto bayesian_linear_regression(const multivariate_normal_distribution<double, C
     auto posterior=make_multivariate_normal_distribution_from_precision(beta_n,L_n);
     auto a_n= a_0+n/2;
     auto b_n=b_0+0.5*(xtx(y)+xAxt(beta_0,L_0)-xAxt(beta_n,L_n));
+
+
     //auto E_n=std::pow(2*std::numbers::pi,-n/2)*std::sqrt(det(L_0)/det(L_n))*std::pow(b_0,a_0)/std::pow(b_n,a_n)*std::tgamma(a_n)/std::tgamma(a_0);
     auto logE_n=0.5*(-std::log(std::numbers::pi)*n+logdet(L_0)-logdet(L_n)+a_0*log(b_0)-a_n*log(b_n)+std::lgamma(a_n)-std::lgamma(a_0));
-    return std::tuple(logE_n,a_n,b_n,posterior,-std::log(std::numbers::pi)*n,logdet(L_0),-logdet(L_n),+a_0*log(b_0),-a_n*log(b_n),std::lgamma(a_n),-std::lgamma(a_0));
+    return std::tuple(logE_n,a_n,b_n,sqrt(b_n/(a_n-1)),posterior,-std::log(std::numbers::pi)*n,logdet(L_0),-logdet(L_n),+a_0*log(b_0),-a_n*log(b_n),std::lgamma(a_n),-std::lgamma(a_0),logE_n,a_n,b_n,sqrt(b_n/(a_n-1)));
 
 }
 

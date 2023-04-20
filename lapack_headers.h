@@ -1057,8 +1057,12 @@ Parameters
                     completed.
 
 */
-  dpotrf_(&UPLO, &N, &A, &LDA, &INFO);
-
+  try
+  {
+   dpotrf_(&UPLO, &N, &A, &LDA, &INFO);
+  }catch (...) {
+   assert(false);
+  }
   if (INFO < 0) {
     return Error(std::to_string(INFO) + "th argument for cholesky failed");
   } else if (INFO > 0) {
@@ -1496,9 +1500,7 @@ Lapack_Product_Self_Transpose(const Matrix<double>& a,
 Lapack_chol(const SymPosDefMatrix<double> &x) {
   return_error<DownTrianMatrix<double>, Lapack_chol> Error;
   assert(x.nrows() == x.ncols());
-
   auto a = x;
-
   /*
    *      DPOTRF computes the Cholesky factorization of a real symmetric
      positive definite matrix A.
@@ -1514,7 +1516,7 @@ Lapack_chol(const SymPosDefMatrix<double> &x) {
 
 Parameters
 */
-  char UPLO = 'L';
+  char UPLO = 'U';
   /*
    *
    * [in]	UPLO
@@ -1575,8 +1577,12 @@ Parameters
 
   if (x.size() == 0)
     return Error(" ZERO MATRIX");
-
+  try{
   lapack::dpotrf_(&UPLO, &N, &A, &LDA, &INFO);
+  }catch(...)
+  {
+  assert(false);
+  }
 
   if (INFO != 0) {
     if (INFO < 0)
@@ -1728,7 +1734,7 @@ Parameters
                A  are not referenced either,  but are assumed to be  unity.
 */
 
-  int LDA = a.nrows();
+  int LDA = SIDE=='L'?M:N;
 
   /*
     [in]	LDA
@@ -1762,7 +1768,12 @@ Parameters
                max( 1, m ). *
    * */
 
-  dtrmm_(&SIDE, &UPLO, &TRANSA, &DIAG, &M, &N, &ALPHA, &A, &LDA, &B, &LDB);
+  try {
+    dtrmm_(&SIDE, &UPLO, &TRANSA, &DIAG, &M, &N, &ALPHA, &A, &LDA, &B, &LDB);
+
+  } catch (...) {
+    assert(false);
+  }
   return out;
 }
 

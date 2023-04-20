@@ -4,6 +4,8 @@ project(CumulativeEvidence LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set (CMAKE_CXX_FLAGS "-ftemplate-backtrace-limit=0 -Werror=return-type")
+
 find_package(BLAS)
 find_package(LAPACK)
 if(LAPACK_FOUND AND BLAS_FOUND)

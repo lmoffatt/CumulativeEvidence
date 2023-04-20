@@ -2,6 +2,7 @@
 #define MULTIVARIATE_NORMAL_DISTRIBUTION_H
 
 #include "matrix.h"
+#include <iostream>
 #include <random>
 
 
@@ -60,20 +61,14 @@ public:
     return cholesky() * z;
   }
   auto operator()(std::mt19937_64 &mt, std::size_t n) {
-    auto out = Matrix<T>(n, mean_.ncols());
-    for (std::size_t i = 0; i < n; ++i) {
-      auto z = random_matrix_normal(mt, mean().nrows(), mean().ncols());
-      z = cholesky() * z;
-      for (std::size_t j = 0; j < out.ncols(); ++j)
-        out(i, j) = z[j];
-    }
-    return out;
+    return  random_matrix_normal(mt, n, mean().ncols()) * tr(cholesky());
   }
 
   friend std::ostream& operator<<(std::ostream& os, const multivariate_normal_distribution& m)
   {
+
     os<<"mean "<<m.mean();
-    os<<"cov "<<m.cov();
+    os<<"diag(cov) "<<diag(m.cov());
     return os;
 
   }
@@ -132,8 +127,9 @@ requires Covariance<T, Cova> && contains_value<Mat &&, Matrix<T>> &&
 
     if (chol_inv) {
       auto chol = inv(chol_inv.value());
+
       if (chol) {
-        auto cov = XTX(chol.value());
+        auto cov = XXT(tr(chol.value()));
         auto beta_mean = get_value(std::forward<Mat>(mean));
         auto beta_cov_inv=get_value(std::forward<Cov>(cov_inv));
         return multivariate_normal_distribution<T, Cova>(
@@ -146,6 +142,9 @@ requires Covariance<T, Cova> && contains_value<Mat &&, Matrix<T>> &&
                    " cholesky fails to be built from precision");
   }
 }
+
+
+
 
 
 
