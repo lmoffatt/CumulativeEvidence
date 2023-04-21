@@ -20,15 +20,16 @@ private:
   using cholesky_type = std::decay_t<decltype(get_value(::cholesky(cov_)))>;
   cholesky_type cho_;
   Cova cov_inv_;
+  double logdetCov_;
 
   static double calc_logdet(const cholesky_type &cho) {
     return std::visit([](auto const &m) { return 2 * logdet(m); }, cho);
   }
 
   multivariate_normal_distribution(Matrix<T> &&mean, Cova &&cov,
-                                   cholesky_type &&chol, Cova &&cov_inv)
+                                   cholesky_type &&chol, Cova &&cov_inv, double logdetCov)
       : n_{}, mean_{std::move(mean)}, cov_{std::move(cov)},
-        cho_{std::move(chol)}, cov_inv_{std::move(cov_inv)} {}
+      cho_{std::move(chol)}, cov_inv_{std::move(cov_inv)},logdetCov_{logdetCov} {}
 
 public:
   template <
@@ -51,17 +52,36 @@ public:
 
   auto &mean() const { return mean_; }
 
+  std::size_t size()const {return mean().size();}
   auto &cov() const { return cov_; }
 
   auto &cov_inv() const { return cov_inv_; }
   auto &cholesky() const { return cho_; }
 
-  auto operator()(std::mt19937_64 &mt) {
+  Matrix<double> operator()(std::mt19937_64 &mt) {
     auto z = random_matrix_normal(mt, mean().nrows(), mean().ncols());
-    return cholesky() * z;
+    if (mean().nrows()==1)
+        return z* tr(cholesky());
+    else
+        return cholesky() * z;
   }
   auto operator()(std::mt19937_64 &mt, std::size_t n) {
     return  random_matrix_normal(mt, n, mean().ncols()) * tr(cholesky());
+  }
+
+  auto logDetCov() const {return logdetCov_;}
+  double chi2(const Matrix<T>& x)const {
+    auto xdiff=x - mean();
+    if (xdiff.nrows()==cov_inv().nrows())
+    return xtAx(xdiff, cov_inv());
+    else
+    return xAxt(xdiff, cov_inv());
+
+ }
+  double logP(const Matrix<T>& x)const
+  {
+    assert(x.size()==mean().size());
+    return -0.5 * (mean().size() * log(std::numbers::pi) + logDetCov() + chi2(x));
   }
 
   friend std::ostream& operator<<(std::ostream& os, const multivariate_normal_distribution& m)
@@ -96,9 +116,13 @@ make_multivariate_normal_distribution(Mat &&mean, Cov &&cov) {
       auto inv = inv_from_chol(chol.value());
       if (inv) {
         auto meanbeta = get_value(std::forward<Mat>(mean));
+        auto logDetCov=logdet(chol.value());
+        if (logDetCov)
         return multivariate_normal_distribution<T, Cova>(
             std::move(meanbeta), std::move(cov), std::move(chol.value()),
-            std::move(inv.value()));
+                std::move(inv.value()),logDetCov.value());
+        else
+        return Error(logDetCov.error() + " log determinant fails");
       } else
         return Error(inv.error() + " covariance cannot be inverted");
     } else
@@ -132,9 +156,14 @@ requires Covariance<T, Cova> && contains_value<Mat &&, Matrix<T>> &&
         auto cov = XXT(tr(chol.value()));
         auto beta_mean = get_value(std::forward<Mat>(mean));
         auto beta_cov_inv=get_value(std::forward<Cov>(cov_inv));
+        auto logDetCov=logdet(diag(chol.value()));
+        if (logDetCov)
         return multivariate_normal_distribution<T, Cova>(
             std::move(beta_mean), std::move(cov), std::move(chol.value()),
-            std::move(beta_cov_inv));
+                std::move(beta_cov_inv), logDetCov.value());
+        else
+          return Error(logDetCov.error() + " log of determinant fails");
+
       } else
         return Error(chol.error() + " cholesky cannot be inverted");
     } else
@@ -143,6 +172,29 @@ requires Covariance<T, Cova> && contains_value<Mat &&, Matrix<T>> &&
   }
 }
 
+
+
+
+class inverse_gamma_distribution
+{
+  private:
+  std::gamma_distribution<> g_;
+      double cte_int_;
+
+  public:
+  inverse_gamma_distribution(double _alpha,double _beta):g_{_alpha,_beta},
+          cte_int_{-std::lgamma(_alpha)+_alpha*std::log(_beta)}
+      {}
+
+  double operator()(std::mt19937_64& mt){ return 1.0/g_(mt);}
+
+  double alpha()const{return g_.alpha();}
+  double beta()const {return g_.beta();}
+  double logP(double x)const
+  {
+    return cte_int_-(alpha()+1.0)*std::log(x)-beta()/x;
+  }
+};
 
 
 

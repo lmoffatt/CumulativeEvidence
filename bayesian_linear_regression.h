@@ -4,6 +4,7 @@
 
 
 #include "matrix.h"
+#include "matrix_random.h"
 #include "multivariate_normal_distribution.h"
 #include <cmath>
 

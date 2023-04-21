@@ -13,7 +13,7 @@ if(LAPACK_FOUND AND BLAS_FOUND)
 endif()
 
 
-add_executable(CumulativeEvidence main.cpp mcmc.h cuevi.h parallel_tempering.h multimodal_multivariate_model.h matrix.h matrix_random.h qr_factorization.h lapack_headers.h random_samplers.h maybe_error.h bayesian_linear_regression.h multivariate_normal_distribution.h
+add_executable(CumulativeEvidence main.cpp mcmc.h cuevi.h parallel_tempering.h multimodal_multivariate_model.h matrix.h matrix_random.h qr_factorization.h lapack_headers.h random_samplers.h maybe_error.h bayesian_linear_regression.h multivariate_normal_distribution.h distributions.h
 )
 target_link_libraries(CumulativeEvidence ${lapackblas_libraries})
 
