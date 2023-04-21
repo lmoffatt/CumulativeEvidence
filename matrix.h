@@ -10,6 +10,8 @@
 #include <iomanip>
 
 template <class> class Matrix;
+template <class> class SubMatrix;
+
 template <class> class SymmetricMatrix;
 template <class> class SymPosDefMatrix;
 template <class> class UpTrianMatrix;
@@ -79,6 +81,7 @@ private:
 
 public:
   static int cell_width(){return 12;}
+  explicit Matrix(){}
   explicit Matrix(std::size_t _nrows, std::size_t _ncols,
                   bool initialize = true)
       : size_{_nrows * _ncols}, nrows_{_nrows}, ncols_{_ncols},
@@ -253,6 +256,10 @@ public:
     return os;
   }
 };
+
+
+
+
 
 template <class T> class SymmetricMatrix : public Matrix<T> {
   using base_type = Matrix<T>;

@@ -174,9 +174,6 @@ auto init_thermo_mcmc(std::size_t n_walkers,
   return thermo_mcmc{walker, i_walker};
 }
 
-template <class Conditions>
-using checks_convergence = auto (*)(Conditions &&cond, const thermo_mcmc &)
-    -> std::pair<Conditions, bool>;
 
 std::pair<std::pair<std::size_t,std::size_t>, bool> check_iterations(std::pair<std::size_t,std::size_t> current_max,const thermo_mcmc&)
 {
@@ -289,8 +286,8 @@ auto &thermo_jump_mcmc(const by_beta<double>& beta,
 }
 
 
-template<class Variable>
-auto push_back_new_beta(thermo_mcmc& current, ensemble<std::mt19937_64>& mts, sample_Parameters modelsample,
+template<class Parameters,class Variable>
+auto push_back_new_beta(thermo_mcmc<Parameters>& current, ensemble<std::mt19937_64>& mts, sample_Parameters modelsample,
                    calculates_PriorProb priorfunction,
                    calculates_Likelihood<Variable> likfunction,
                    const IndexedData &y, const Variable &x)

@@ -50,6 +50,7 @@ int main() {
 
   auto y = X * tr(b) + eps;
 
+
   auto prior_b = make_multivariate_normal_distribution(
       Matrix<double>(1ul, npar, mean_b), IdM<double>(npar));
 
@@ -57,6 +58,7 @@ int main() {
   auto sam = prior(mt);
   std::cerr << "prior sample\n" << sam;
 
+  std::cerr<<"logLik="<<logLikelihood(linear_model{},sam,y,X);
 
   static_assert(Multivariate<decltype(prior_b.value())>);
 
@@ -66,7 +68,28 @@ int main() {
     auto reg = bayesian_linear_regression(prior_b.value(), prior_eps_df,
                                           prior_eps_variance, y, X);
     std::cout << reg;
+
   }
+
+  auto linear_model=make_bayesian_linear_model(prior_eps_df,prior_eps_variance,Matrix<double>(1ul, npar, mean_b), IdM<double>(npar)).value();
+
+  auto p=sample(mt,linear_model);
+  static_assert(is_model<decltype(linear_model),Matrix<double>,Matrix<double>,Matrix<double>>);
+
+
+
+  std::size_t num_scouts_per_ensemble=10;
+  double jump_factor=0.5;
+  double stops_at= 1e-3;
+  bool includes_zero=false;
+  std::size_t max_iter=100;
+
+
+  auto opt=thermo_max_iter(linear_model,y,X, num_scouts_per_ensemble,max_iter,
+                  jump_factor,  stops_at,  includes_zero,
+                  initseed);
+
+
 
   // std::cout<<y;
 

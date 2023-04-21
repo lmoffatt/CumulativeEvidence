@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.5)
 
 project(CumulativeEvidence LANGUAGES CXX)
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set (CMAKE_CXX_FLAGS "-ftemplate-backtrace-limit=0 -Werror=return-type")
+set (CMAKE_CXX_FLAGS "-ftemplate-backtrace-limit=0 -Werror=return-type -fconcepts-diagnostics-depth=20" )
 
 find_package(BLAS)
 find_package(LAPACK)

@@ -7,6 +7,28 @@
 #include <random>
 #include <utility>
 
+template <class Distribution>
+concept is_Distribution = requires(Distribution &m, Distribution const& m_const) {
+    {
+        m(std::declval<std::mt19937_64 &>())
+    } ;
+
+    {
+        m_const.logP(m(std::declval<std::mt19937_64 &>()))
+    }->std::convertible_to<double>;
+
+};
+
+template <class Distribution, class T>
+concept is_Distribution_of = requires(Distribution &m, Distribution const& m_const) {
+    {
+        m(std::declval<std::mt19937_64 &>())
+    } ->std::convertible_to<T>;
+
+    {
+        m_const.logP(m(std::declval<std::mt19937_64 &>()))
+    }->std::convertible_to<double>;
+};
 
 template<class T>
 concept has_size= requires(const T& a)
@@ -117,6 +139,7 @@ requires(!Multivariate<Dist>)
 
 
 template<class... ds>
+requires(is_Distribution<ds>&&...)
 class distributions: public ds...
 {
 public:

@@ -10,6 +10,11 @@ template <typename T, typename C>
 concept Covariance = std::convertible_to<C, DiagPosDetMatrix<T>> ||
                      std::convertible_to<C, SymPosDefMatrix<T>>;
 
+
+
+
+
+
 template <typename T, class Cova>
   requires Covariance<T, Cova>
 class multivariate_normal_distribution {
@@ -195,6 +200,9 @@ class inverse_gamma_distribution
     return cte_int_-(alpha()+1.0)*std::log(x)-beta()/x;
   }
 };
+
+
+
 
 
 
