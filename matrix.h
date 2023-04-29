@@ -144,7 +144,7 @@ public:
   auto nrows() const { return nrows_; }
   auto size() const { return size_; }
   ~Matrix() {
-    std::cerr<<"release "<<size()<<"\n";
+  //  std::cerr<<"release "<<size()<<"\n";
     delete[] x_; }
 
   friend auto operator*(const Matrix &a, const Matrix &b) {
@@ -369,10 +369,23 @@ template <class T> auto xAxt(const Matrix<T> &x, const SymmetricMatrix<T> &A) {
   return out;
 }
 
+template <class T> auto xAyt(const Matrix<T> &x, const SymmetricMatrix<T> &A, const Matrix<T>& y) {
+  assert(x.ncols() == A.nrows());
+  assert(y.ncols() == A.ncols());
+  auto out = T{};
+  for (std::size_t i = 0; i < A.nrows(); ++i) {
+    out += x[i] * A(i, i) * x[i];
+    for (std::size_t j = i + 1; j < A.ncols(); ++j)
+      out += 2 * x[i] * A(i, j) * y[j];
+  }
+  return out;
+}
+
+
 template <class F, class T> auto apply(F &&f, const SymmetricMatrix<T> &x) {
   SymmetricMatrix<T> out(x.nrows());
-  for (std::size_t i = 0; i < x.size(); ++i)
-    for (std::size_t j = i; j < x.size(); ++j)
+  for (std::size_t i = 0; i < x.nrows(); ++i)
+    for (std::size_t j = i; j < x.ncols(); ++j)
       out.set(i, j, f(x(i, j)));
   return out;
 }
@@ -960,7 +973,7 @@ Maybe_error<DiagPosDetMatrix<T>> inv_from_chol(const DiagPosDetMatrix<T> &x) {
     if (x(i, i) > 0)
       out[i] = std::pow(x(i, i), -2);
     else
-      return "error inverting chol";
+      return std::string("error inverting chol");
   return out;
 }
 
@@ -1014,4 +1027,15 @@ SymPosDefMatrix<T> AT_D_A(const Matrix<T> &A, const DiagPosDetMatrix<T> &D) {
   return out;
 }
 
+
+
+template<class Matrix>
+double Trace(Matrix const& x)
+{
+  double out=0;
+  for (std::size_t i=0; i<x.nrows(); ++i)
+    for (std::size_t j=0; j<x.ncols(); ++j)
+      out+=x(i,j);
+  return out;
+}
 #endif // MATRIX_H

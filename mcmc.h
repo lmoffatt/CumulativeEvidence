@@ -63,11 +63,11 @@ concept is_model = requires(Model const &m_const,
 
   {
     logPrior(m_const,p)
-  }->std::convertible_to<double>;
+  }->std::convertible_to<Maybe_error<double>>;
 
   {
     logLikelihood(m_const,p,var,y)
-  }->std::convertible_to<double>;
+  }->std::convertible_to<Maybe_error<double>>;
 };
 
 
@@ -99,9 +99,16 @@ requires (is_model<Model,Parameters,Variables,IndexedData>)
 auto init_mcmc(std::mt19937_64 &mt, Model& m,
                const IndexedData &y, const Variables &x) {
   auto par = sample(mt,m);
-  double logP = logPrior(m,par);
-  double logL = logLikelihood(m,par, y,x);
-  return mcmc{std::move(par), logP, logL};
+  auto logP = logPrior(m,par);
+  auto logL = logLikelihood(m,par, y,x);
+  while(!(logP)||!(logL))
+  {
+    par = sample(mt,m);
+    logP = logPrior(m,par);
+    logL = logLikelihood(m,par, y,x);
+
+  }
+  return mcmc{std::move(par), logP.value(), logL.value()};
 }
 
 #endif // MCMC_H

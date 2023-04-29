@@ -5,6 +5,7 @@
 #include <string>
 #include <tuple>
 #include <variant>
+#include <vector>
 template <typename C, template <typename...> class V>
 struct is_of_this_template_type : std::false_type {};
 template <template <typename...> class V, typename... Ts>
@@ -122,7 +123,14 @@ public:
       os<<x.error();
     return os;
   }
-
+  friend std::ostream& operator<<(std::ostream &os,  Maybe_error&& x)
+  {
+    if (x)
+      os<<x.value();
+    else
+      os<<x.error();
+    return os;
+  }
 };
 
 template <class T, class S>
@@ -310,5 +318,16 @@ std::ostream& operator<<(std::ostream& os, const std::tuple<Ts...>& tu)
 {
   return std::apply([&os](auto&... x)->std::ostream& {((os<<x<<"\n"),...);return os; },tu);
 }
+
+template<class Ts>
+std::ostream& operator<<(std::ostream& os, const std::vector<Ts>& v)
+{
+  for (std::size_t i=0; i<v.size(); ++i)
+    os<<v[i]<<"\n";
+//  os<<"\n";
+  return os;
+}
+
+
 
 #endif // MAYBE_ERROR_H

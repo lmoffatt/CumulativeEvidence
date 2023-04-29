@@ -83,10 +83,13 @@ public:
     return xAxt(xdiff, cov_inv());
 
  }
-  double logP(const Matrix<T>& x)const
+  Maybe_error<double> logP(const Matrix<T>& x)const
   {
     assert(x.size()==mean().size());
-    return -0.5 * (mean().size() * log(std::numbers::pi) + logDetCov() + chi2(x));
+    double out=-0.5 * (mean().size() * log(2*std::numbers::pi) + logDetCov() + chi2(x));
+    if (std::isfinite(out))
+        return out;
+    else return "likelihood not finite:" +std::to_string(out);
   }
 
   friend std::ostream& operator<<(std::ostream& os, const multivariate_normal_distribution& m)
@@ -195,12 +198,38 @@ class inverse_gamma_distribution
 
   double alpha()const{return g_.alpha();}
   double beta()const {return g_.beta();}
-  double logP(double x)const
+  Maybe_error<double> logP(double x)const
   {
-    return cte_int_-(alpha()+1.0)*std::log(x)-beta()/x;
+    auto out= cte_int_-(alpha()+1.0)*std::log(x)-beta()/x;
+    if (std::isfinite(out))
+      return out;
+    else return "probability not finite:" +std::to_string(out);
   }
 };
 
+class log_inverse_gamma_distribution
+{
+  private:
+  std::gamma_distribution<> g_;
+  double cte_int_;
+
+  public:
+  log_inverse_gamma_distribution(double _alpha,double _beta):g_{_alpha,_beta},
+      cte_int_{-std::lgamma(_alpha)+_alpha*std::log(_beta)}
+  {}
+
+  double operator()(std::mt19937_64& mt){ return -std::log(g_(mt));}
+
+  double alpha()const{return g_.alpha();}
+  double beta()const {return g_.beta();}
+  Maybe_error<double> logP(double logx)const
+  {
+    auto out= cte_int_-alpha()*logx-beta()*std::exp(-logx);
+    if (std::isfinite(out))
+      return out;
+    else return "probability not finite:" +std::to_string(out);
+  }
+};
 
 
 

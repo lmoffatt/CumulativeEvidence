@@ -72,7 +72,7 @@ auto init_mts(std::mt19937_64 &mt, std::size_t n) {
   return out;
 }
 
-auto get_beta_list(double jump_factor, double stops_at, bool includes_zero) {
+auto get_beta_list(double n_points_per_decade, double stops_at, bool includes_zero) {
   std::size_t num_beta = std::ceil(stops_at / std::log(jump_factor)) + 1;
 
   auto beta_size = num_beta;
@@ -287,7 +287,7 @@ auto &thermo_jump_mcmc(const by_beta<double>& beta,
 
 
 template<class Parameters,class Variable>
-auto push_back_new_beta(thermo_mcmc<Parameters>& current, ensemble<std::mt19937_64>& mts, sample_Parameters modelsample,
+auto push_back_new_beta(thermo_mcmc<Parameters>& current, ensemble<std::mt19937_64>& mts, by_beta<double> const & beta,sample_Parameters modelsample,
                    calculates_PriorProb priorfunction,
                    calculates_Likelihood<Variable> likfunction,
                    const IndexedData &y, const Variable &x)
@@ -301,6 +301,7 @@ auto push_back_new_beta(thermo_mcmc<Parameters>& current, ensemble<std::mt19937_
       current.walkers[iw].push_back(init_mcmc(mts[i],modelsample,priorfunction,likfunction,y,x));
       current.i_walkers[iw].push_back(n_beta_old*n_walkers+iw);
   }
+  current.beta=beta;
   return current;
 }
 
@@ -313,14 +314,14 @@ auto thermo_impl(sample_Parameters modelsample,
                  checks_convergence<ConvergenceConditions> does_converge,
                  ConvergenceConditions converge_cond, const IndexedData &y,
                  const Variable &x, std::size_t num_scouts_per_ensemble,
-                 double jump_factor, double stops_at, bool includes_zero,
+                 double n_points_per_decade, double stops_at, bool includes_zero,
                  std::size_t initseed) {
 
   auto mt = init_mt(initseed);
   auto n_walkers= num_scouts_per_ensemble;
   auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
 
-  auto beta = get_beta_list(jump_factor, stops_at, includes_zero);
+  auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
 
 
 
@@ -351,7 +352,8 @@ auto thermo_impl(sample_Parameters modelsample,
     if (beta_run.size()<beta.size())
     {
       beta_run.insert(beta_run.begin(),beta[beta_run.size()]);
-      current=push_back_new_beta(current,mts,modelsample,priorfunction,likfunction,y,x);
+      current=push_back_new_beta(current,mts,beta_run,modelsample,priorfunction,likfunction,y,x);
+
       mcmc_run = does_converge(mcmc_run.first, current);
     }
 

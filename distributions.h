@@ -15,7 +15,7 @@ concept is_Distribution = requires(Distribution &m, Distribution const& m_const)
 
     {
         m_const.logP(m(std::declval<std::mt19937_64 &>()))
-    }->std::convertible_to<double>;
+    }->std::convertible_to<Maybe_error<double>>;
 
 };
 
@@ -27,7 +27,7 @@ concept is_Distribution_of = requires(Distribution &m, Distribution const& m_con
 
     {
         m_const.logP(m(std::declval<std::mt19937_64 &>()))
-    }->std::convertible_to<double>;
+    }->std::convertible_to<Maybe_error<double>>;
 };
 
 template<class T>
@@ -116,21 +116,28 @@ double logP_impl(const Matrix<double>& , std::size_t, double partial_logP)
 }
 template<class Dist, class... Ds>
 requires(Multivariate<Dist>)
-double logP_impl(const Matrix<double>& x, std::size_t ipos, double partial_logP, const Dist& d, const Ds&...ds)
+    Maybe_error<double> logP_impl(const Matrix<double>& x, std::size_t ipos, double partial_logP, const Dist& d, const Ds&...ds)
 {
     auto n=d.size();
     auto out=Matrix<double>(1,size(d));
     for (std::size_t i=0; i<n; ++i)
         out[i]=x[ipos+i];
     auto logPi=d.logP(out);
-    return logP_impl(x,ipos+n,partial_logP+logPi,ds...);
+    if(logPi)
+        return logP_impl(x,ipos+n,partial_logP+logPi.value(),ds...);
+    else
+       return logPi.error()+"\n log_impl";
 }
 template<class Dist, class... Ds>
 requires(!Multivariate<Dist>)
- double logP_impl(const Matrix<double>& x, std::size_t ipos, double partial_logP, const Dist& d, const Ds&...ds)
+    Maybe_error<double> logP_impl(const Matrix<double>& x, std::size_t ipos, double partial_logP, const Dist& d, const Ds&...ds)
 {
     auto logPi=d.logP(x[ipos]);
-    return logP_impl(x,ipos+1,partial_logP+logPi,ds...);
+    if (logPi)
+       return logP_impl(x,ipos+1,partial_logP+logPi.value(),ds...);
+    else
+       return logPi.error()+"\n log_impl";
+
 }
 
 
@@ -149,7 +156,7 @@ public:
         return concatenate_to_columns(ds::operator()(mt)...);
     }
 
-    double logP(const Matrix<double>& x)const
+    Maybe_error<double> logP(const Matrix<double>& x)const
     {
         return logP_impl(x,0,0.0,static_cast<ds const&>(*this)...);
     }
