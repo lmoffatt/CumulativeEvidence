@@ -90,7 +90,7 @@ public:
   using base_type = std::variant<T, std::string>;
   Maybe_error(T &&x) : base_type(std::move(x)) {}
   Maybe_error(const T &x) : base_type(x) {}
-
+  Maybe_error()=default;
   Maybe_error(char* error): base_type{error}{}
   Maybe_error(std::string &&x) : base_type{(std::move(x))} {}
   Maybe_error(const std::string &x) : base_type{x} {}
@@ -300,6 +300,15 @@ requires(is_Maybe_error<T>)
     return return_type(x.error()+"\n transpose");
 }
 
+template <class T>
+    requires(is_Maybe_error<T>)
+auto Trace(const T &x) {
+  using return_type=Maybe_error_t<std::decay_t<decltype(Trace(x.value()))>>;
+  if (x)
+    return return_type(Trace(x.value()));
+  else
+    return return_type(x.error()+"\n Trace");
+}
 
 template <class T, auto ...F> struct return_error {
   std::string function_label;

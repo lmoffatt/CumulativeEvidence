@@ -158,7 +158,7 @@ public:
 
     Maybe_error<double> logP(const Matrix<double>& x)const
     {
-        return logP_impl(x,0,0.0,static_cast<ds const&>(*this)...);
+        return logP_impl(x,0ul,0.0,static_cast<ds const&>(*this)...);
     }
 
     explicit distributions(ds&&... d): ds{std::move(d)}...{}

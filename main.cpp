@@ -15,7 +15,7 @@ int main() {
   std::cerr<<"myseed=\n"<<myseed<<"\n";
   auto mt = init_mt(myseed);
 
-  auto npar = 4ul;
+  auto npar = 2ul;
   auto nsamples = 500ul;
   auto log10_std_par = 1.0;
 
@@ -23,8 +23,9 @@ int main() {
   auto std_mean_par = 10.0;
 
   auto mean_b = 0.0;
-//  auto std_b = 10.0;
-  auto std_b = 1.0;
+  auto std_b = 10.0;
+
+  auto prior_error_factor=1;
 
   auto par_stds = apply([](auto &x) { return std::pow(10, x); },
                         random_matrix_normal(mt, 1, npar, 0, log10_std_par));
@@ -47,27 +48,36 @@ int main() {
   auto a_0 = prior_eps_df / 2.0;
   auto b_0 = prior_eps_df * prior_eps_variance / 2.0;
 
-  auto prior_error_distribution = inverse_gamma_distribution(a_0, b_0);
+  auto prior_error_distribution = log_inverse_gamma_distribution(a_0, b_0);
 
-  auto s = std::sqrt(prior_error_distribution(mt));
-  std::cerr << "proposed s2 = " << std::pow(s,2) << "\n";
+  auto logs2 = std::sqrt(prior_error_distribution(mt));
+  auto s2=std::exp(logs2);
+  auto s= std::sqrt(s2);
+  std::cerr << "proposed s = " << s << "\n";
+  std::cerr << "proposed s2 = " << s2 << "\n";
+  std::cerr << "proposed logs2 = " << logs2 << "\n";
+
+  std::cerr << "beta real = " << logs2 << "\t"<<b;
+
+
+
   auto eps = random_matrix_normal(mt, nsamples, 1, 0, s);
 
   auto y = X * tr(b) + eps;
 
 
   auto prior_b = make_multivariate_normal_distribution(
-      Matrix<double>(1ul, npar, mean_b), IdM<double>(npar));
+      Matrix<double>(1ul, npar, mean_b), IdM<double>(npar)*std_b*std_b*prior_error_factor);
 
   auto prior = distributions(prior_error_distribution, prior_b.value());
   auto sam = prior(mt);
-  std::cerr << "prior sample\n" << sam;
+//  std::cerr << "prior sample\n" << sam;
 
-  std::cerr<<"logLik="<<logLikelihood(linear_model{},sam,y,X);
+//  std::cerr<<"logLik="<<logLikelihood(linear_model{},sam,y,X);
 
   static_assert(Multivariate<decltype(prior_b.value())>);
 
-  std::cerr << "prior logP =" << prior.logP(sam)<<"\n";
+//  std::cerr << "prior logP =" << prior.logP(sam)<<"\n";
 
   if (prior_b.valid()) {
     auto reg = bayesian_linear_regression(prior_b.value(), prior_eps_df,
@@ -76,27 +86,27 @@ int main() {
 
   }
 
-  auto linear_model=make_bayesian_linear_model(prior_eps_df,prior_eps_variance,Matrix<double>(1ul, npar, mean_b), IdM<double>(npar)*std_b*std_b).value();
+  auto linear_model=make_bayesian_linear_model(prior_eps_df,prior_eps_variance,Matrix<double>(1ul, npar, mean_b), IdM<double>(npar)*std_b*std_b*prior_error_factor).value();
 
   auto p=sample(mt,linear_model);
   static_assert(is_model<decltype(linear_model),Matrix<double>,Matrix<double>,Matrix<double>>);
 
 
 
-  std::size_t num_scouts_per_ensemble=64    ;
+  std::size_t num_scouts_per_ensemble=16    ;
   double n_points_per_decade=3  ;
-  double stops_at= 1e-7;
+  double stops_at= 1e-4;
   bool includes_zero=true;
-  std::size_t max_iter=2000;
+  std::size_t max_iter=50000;
   std::string path="";
   std::string filename= "A";
 
-  std::size_t thermo_jumps_every = linear_model.size();
+  std::size_t thermo_jumps_every = linear_model.size()*1e7;
 
 
   auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
 
-  auto mean_logLik = bayesian_linear_regression(prior_b.value(), prior_eps_df,
+  auto mean_logLik = bayesian_linear_regression_calculate_mean_logLik(prior_b.value(), prior_eps_df,
                                         prior_eps_variance, y, X,beta);
 
   std::cerr<<"\n\nbeta and mean_logLik!!\n";
@@ -105,9 +115,8 @@ int main() {
 
 
 
-
  // if (false)
-      auto opt=thermo_max_iter(linear_model,y,X, path, "Iter",num_scouts_per_ensemble,thermo_jumps_every,max_iter,
+      auto opt=thermo_max_iter(linear_model,y,X, path, "Iteri",num_scouts_per_ensemble,thermo_jumps_every,max_iter,
                   n_points_per_decade,  stops_at,  includes_zero,
                   initseed);
 

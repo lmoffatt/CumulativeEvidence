@@ -643,6 +643,16 @@ public:
     return out;
   }
 
+  friend auto operator+(const DiagPosDetMatrix<T> &b,const SymPosDefMatrix &a
+                        ) {
+    auto out = a;
+    for (std::size_t i = 0; i < b.nrows(); ++i)
+      out(i, i) += b(i, i);
+    return out;
+  }
+
+
+
   friend SymPosDefMatrix operator*(const SymPosDefMatrix &a, double b) {
     return SymPosDefMatrix(static_cast<SymmetricMatrix<T> const &>(a) * b);
   }
@@ -664,7 +674,7 @@ public:
   friend Maybe_error<double> logdet(const SymPosDefMatrix &x) {
     auto chol = cholesky(x);
     if (chol)
-      return logdet(diag(chol.value()));
+      return 2.0*logdet(chol.value());
     else
       return Maybe_error<double>(chol.error() + " in calculation of logdet");
   }
@@ -1033,9 +1043,8 @@ template<class Matrix>
 double Trace(Matrix const& x)
 {
   double out=0;
-  for (std::size_t i=0; i<x.nrows(); ++i)
-    for (std::size_t j=0; j<x.ncols(); ++j)
-      out+=x(i,j);
+  for (std::size_t i=0; i<std::min(x.nrows(),x.ncols()); ++i)
+      out+=x(i,i);
   return out;
 }
 #endif // MATRIX_H

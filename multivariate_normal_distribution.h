@@ -214,14 +214,14 @@ class log_inverse_gamma_distribution
   double cte_int_;
 
   public:
-  log_inverse_gamma_distribution(double _alpha,double _beta):g_{_alpha,_beta},
+  log_inverse_gamma_distribution(double _alpha,double _beta):g_{_alpha,1.0/_beta},
       cte_int_{-std::lgamma(_alpha)+_alpha*std::log(_beta)}
   {}
 
   double operator()(std::mt19937_64& mt){ return -std::log(g_(mt));}
 
   double alpha()const{return g_.alpha();}
-  double beta()const {return g_.beta();}
+  double beta()const {return 1.0/g_.beta();}
   Maybe_error<double> logP(double logx)const
   {
     auto out= cte_int_-alpha()*logx-beta()*std::exp(-logx);
@@ -229,6 +229,60 @@ class log_inverse_gamma_distribution
       return out;
     else return "probability not finite:" +std::to_string(out);
   }
+};
+
+
+
+template <typename T, class Cova>
+    requires Covariance<T, Cova>
+class multivariate_gamma_normal_distribution: public log_inverse_gamma_distribution, multivariate_normal_distribution<T,Cova> {
+
+
+  public:
+  using m_normal=multivariate_normal_distribution<T,Cova>;
+      using m_normal::mean;
+  using m_normal::chi2;
+
+      std::size_t size()const { return 1+ m_normal::size();}
+
+
+      multivariate_gamma_normal_distribution(log_inverse_gamma_distribution&& g,m_normal&& n):
+          log_inverse_gamma_distribution{std::move(g)}, m_normal{std::move(n)}{}
+  Matrix<double> operator()(std::mt19937_64 &mt) {
+    auto k=m_normal::size();
+    auto sample_logVar=log_inverse_gamma_distribution::operator()(mt);
+    auto sample_b=m_normal::operator()(mt);
+    auto out = Matrix<double>(1, k+1, false);
+    out[0]=sample_logVar;
+
+    for (std::size_t i = 0; i < k; ++i)
+      out[i+1] = sample_b[i];
+    return out;
+
+  }
+
+  Maybe_error<double> logP(const Matrix<T>& x)const
+  {
+    assert(x.size()==mean().size()+1);
+    double logvar = x[0];
+    auto logPvar= log_inverse_gamma_distribution::logP(logvar);
+    if (!logPvar)
+      return "likelihood of variance wrong "+logPvar.error();
+    else{
+    double var = std::exp(logvar);
+    auto k=mean().size();
+    auto b = Matrix<double>(1, k, false);
+    for (std::size_t i = 0; i < k; ++i)
+      b[i] = x[i + 1];
+    auto chi_2=m_normal::chi2(b)/var;
+
+    double out=logPvar.value()-0.5 * (k * log(2*std::numbers::pi) + m_normal::logDetCov() + k*logvar+ chi_2);
+    if (std::isfinite(out))
+      return out;
+    else return "likelihood not finite:" +std::to_string(out);
+    }}
+
+
 };
 
 

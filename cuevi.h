@@ -162,7 +162,7 @@ auto init_thermo_mcmc(std::size_t n_walkers,
   ensemble<by_beta<mcmc>> walker(n_walkers, by_beta<mcmc>(n_beta));
 
   for (std::size_t half=0; half<2; ++half)
-#pragma omp parallel for
+//#pragma omp parallel for
   for (std::size_t iiw = 0; iiw < n_walkers/2; ++iiw) {
     auto iw=iiw+half*n_walkers/2;
     for (std::size_t i = 0; i < n_beta; ++i) {
@@ -218,7 +218,7 @@ auto &step_stretch_thermo_mcmc(const by_beta<double>& beta,
                                                             uniform_real);
 
   for (bool half : {false, true})
-#pragma omp parallel for
+//#pragma omp parallel for
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = udist[i](mt[i]);
