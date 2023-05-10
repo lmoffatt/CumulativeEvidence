@@ -15,8 +15,8 @@ int main() {
   std::cerr<<"myseed=\n"<<myseed<<"\n";
   auto mt = init_mt(myseed);
 
-  auto npar = 2ul;
-  auto nsamples = 500ul;
+  auto npar = 100ul;
+  auto nsamples = 5000ul;
   auto log10_std_par = 1.0;
 
   auto mean_mean_par = 0.0;
@@ -50,7 +50,7 @@ int main() {
 
   auto prior_error_distribution = log_inverse_gamma_distribution(a_0, b_0);
 
-  auto logs2 = std::sqrt(prior_error_distribution(mt));
+  auto logs2 = prior_error_distribution(mt);
   auto s2=std::exp(logs2);
   auto s= std::sqrt(s2);
   std::cerr << "proposed s = " << s << "\n";
@@ -64,6 +64,7 @@ int main() {
   auto eps = random_matrix_normal(mt, nsamples, 1, 0, s);
 
   auto y = X * tr(b) + eps;
+  std::cerr<<"\ny\n"<<y;
 
 
   auto prior_b = make_multivariate_normal_distribution(
@@ -93,16 +94,17 @@ int main() {
 
 
 
-  std::size_t num_scouts_per_ensemble=16    ;
+  std::size_t num_scouts_per_ensemble=32    ;
   double n_points_per_decade=3  ;
-  double stops_at= 1e-4;
+  double stops_at= 1e-8;
   bool includes_zero=true;
-  std::size_t max_iter=50000;
+  std::size_t max_iter=5000;
   std::string path="";
   std::string filename= "A";
 
-  std::size_t thermo_jumps_every = linear_model.size()*1e7;
+  std::size_t thermo_jumps_every = linear_model.size();
 
+  std::size_t checks_derivative_every_model_size= 10;
 
   auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
 
@@ -115,13 +117,13 @@ int main() {
 
 
 
- // if (false)
+  if (false)
       auto opt=thermo_max_iter(linear_model,y,X, path, "Iteri",num_scouts_per_ensemble,thermo_jumps_every,max_iter,
                   n_points_per_decade,  stops_at,  includes_zero,
                   initseed);
 
-  if (false)
-  auto opt2=thermo_convergence(linear_model,y,X,path, "Converge", num_scouts_per_ensemble,thermo_jumps_every,10ul,
+//  if (false)
+  auto opt2=thermo_convergence(linear_model,y,X,path, "Converge", num_scouts_per_ensemble,thermo_jumps_every,checks_derivative_every_model_size,
                              n_points_per_decade,  stops_at,  includes_zero,
                              initseed);
 

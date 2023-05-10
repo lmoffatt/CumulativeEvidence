@@ -156,8 +156,14 @@ auto derivative_var_ratio(by_beta<double> const &mean,
                           by_beta<double> const &beta) {
   by_beta<double> out(mean.size() - 1);
   for (std::size_t i = 0; i < mean.size() - 1; ++i)
-    out[i] = (var[i + 1] + var[i]) / (2 * mean[i + 1] - mean[i]) *
+  {
+    auto dL= (mean[i + 1] - mean[i])/(beta[i + 1] - beta[i]);
+    auto dL0=var[i + 1];
+    auto dL1=var[i];
+    out[i] = (var[i + 1] + var[i]) / (2 * (mean[i + 1] - mean[i])) *
              (beta[i + 1] - beta[i]);
+
+  }
   return out;
 }
 
@@ -173,10 +179,10 @@ auto mean_logL_walker(by_iteration<thermo_mcmc<Parameters>> const &series) {
             series[i].walkers[iwalker][ibeta].logL / num_samples(series);
   return out;
 }
-double calcEvidence_(double b1, double b2, double L1, double L2) {
+double calcEvidence(double b1, double b2, double L1, double L2) {
   return 0.5 * (L2 + L1) * (b2 - b1);
 }
-double calcEvidence(double b1, double b2, double L1, double L2) {
+double calcEvidence_(double b1, double b2, double L1, double L2) {
   if (b1 == 0)
     return calcEvidence_(b1, b2, L1, L2);
   auto db = b2 - b1;
@@ -375,9 +381,9 @@ public:
     if (current_iteration_ % current_samples().size() == 0) {
       auto var_ratio = get_derivative_var_ratio();
       for (std::size_t i = 0; i < var_ratio.size(); ++i) {
-        std::cerr << i << "=" << var_ratio[i];
+        std::cerr << "("<<curr_samples_[0].beta[i] << " => " << var_ratio[i]<<")  ";
         if (var_ratio[i] > max_ratio_) {
-          std::cerr << "FALSE \n";
+          std::cerr << "  FALSE \n";
           return false;
         }
       }
@@ -566,7 +572,7 @@ public:
   friend void report_title(save_likelihood &s,
                            thermo_mcmc<Parameters> const &) {
 
-    s.f << "iter" << s.sep << "beta" << s.sep << "i_walker" << s.sep
+    s.f <<"n_betas"<< s.sep << "iter" << s.sep << "beta" << s.sep << "i_walker" << s.sep
         << "id_walker" << s.sep << "logP" << s.sep << "logLik"
         << "\n";
   }
@@ -576,7 +582,7 @@ public:
       for (std::size_t i_beta = 0; i_beta < num_betas(data); ++i_beta)
         for (std::size_t i_walker = 0; i_walker < num_walkers(data); ++i_walker)
 
-          s.f << data.iter << s.sep << data.beta[i_beta] << s.sep << i_walker
+          s.f << num_betas(data) << s.sep<<data.iter << s.sep << data.beta[i_beta] << s.sep << i_walker
               << s.sep << data.i_walkers[i_walker][i_beta] << s.sep
               << data.walkers[i_walker][i_beta].logP << s.sep
               << data.walkers[i_walker][i_beta].logL << "\n";
@@ -594,7 +600,7 @@ public:
 
   friend void report_title(save_Evidence &s, thermo_mcmc<Parameters> const &) {
 
-    s.f << "iter" << s.sep << "beta" << s.sep << "meanPrior" << s.sep << "meanLik" << s.sep << "varLik"
+    s.f << "n_betas" << s.sep << "iter" << s.sep << "beta" << s.sep << "meanPrior" << s.sep << "meanLik" << s.sep << "varLik"
         << s.sep << "Evidence_mean" << s.sep << "Evidence_var"
         << "\n";
   }
@@ -610,7 +616,7 @@ public:
         auto Evidence2 = calculate_Evidence(data.beta, meanLik, varLik);
         auto Evidence1 = calculate_Evidence(data.beta, meanLik);
         for (std::size_t i_beta = 0; i_beta < num_betas(data); ++i_beta)
-          s.f << data.iter << s.sep << data.beta[i_beta] << s.sep
+          s.f << num_betas(data) << s.sep<< data.iter << s.sep << data.beta[i_beta] << s.sep
               << meanPrior[i_beta] << s.sep << meanLik[i_beta] << s.sep << varLik[i_beta] << s.sep
               << Evidence1 << s.sep << Evidence2 << "\n";
       }
@@ -630,7 +636,7 @@ public:
 
   friend void report_title(save_Parameter &s, thermo_mcmc<Parameters> const &) {
 
-    s.f << "iter" << s.sep << "beta" << s.sep << "i_walker" << s.sep
+    s.f <<"n_betas"<<s.sep<< "iter" << s.sep << "beta" << s.sep << "i_walker" << s.sep
         << "id_walker" << s.sep << "i_par" << s.sep << "par_value"
         << "\n";
   }
@@ -641,7 +647,7 @@ public:
         for (std::size_t i_walker = 0; i_walker < num_walkers(data); ++i_walker)
           for (std::size_t i_par = 0; i_par < num_Parameters(data); ++i_par)
 
-            s.f << data.iter << s.sep << data.beta[i_beta] << s.sep << i_walker
+            s.f << num_betas(data) << s.sep<< data.iter << s.sep << data.beta[i_beta] << s.sep << i_walker
                 << s.sep << data.i_walkers[i_walker][i_beta] << s.sep << i_par
                 << s.sep << data.walkers[i_walker][i_beta].parameter[i_par]
                 << "\n";
@@ -708,7 +714,7 @@ auto thermo_impl(const Algorithm &alg, Model &model, const IndexedData &y,
     if (beta_run.size() < beta.size()) {
       beta_run.insert(beta_run.begin(), beta[beta_run.size()]);
       current = push_back_new_beta(current, mts, beta_run, model, y, x);
-      std::cerr << "  beta_run=" << beta_run[0];
+      std::cerr << "\n  beta_run=" << beta_run[0]<<"\n";
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
     }
   }
