@@ -15,7 +15,7 @@ int main() {
   std::cerr<<"myseed=\n"<<myseed<<"\n";
   auto mt = init_mt(myseed);
 
-  auto npar = 100ul;
+  auto npar = 40ul;
   auto nsamples = 5000ul;
   auto log10_std_par = 1.0;
 

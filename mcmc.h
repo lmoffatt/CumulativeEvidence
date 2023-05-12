@@ -9,9 +9,10 @@
 using Parameters = Matrix<double>;
 using Data = Matrix<double>;
 
-using Indexes = std::vector<std::size_t>;
+using WalkerIndexes = std::vector<std::size_t>;
 
-using IndexedData = std::pair<Indexes, Data>;
+using DataIndexes = std::vector<std::size_t>;
+using IndexedData = std::pair<DataIndexes, Data>;
 
 /*
 auto operator+(const Parameters &x, const Parameters &y) {
@@ -47,19 +48,19 @@ auto init_mt(typename std::mt19937_64::result_type initseed) {
 
 
 
-template <class Model, class Parameters,class Variables,class IndexedData>
+template <class Model, class Parameters,class Variables,class DataType>
 concept is_model = requires(Model const &m_const,
                             Model& m,
                             const Parameters& p,
                             const Variables& var,
-                            const IndexedData& y) {
+                            const DataType& y) {
   {
     sample(std::declval<std::mt19937_64 &>(),m)
   } -> std::convertible_to<Parameters>;
 
   {
     simulate(std::declval<std::mt19937_64 &>(),m_const,p,var)
-  }-> std::convertible_to<IndexedData>;
+  }-> std::convertible_to<DataType>;
 
   {
     logPrior(m_const,p)
@@ -92,12 +93,12 @@ struct mcmc {
   double logL;
 };
 
-template <class Model, class Variables,class IndexedData,
+template <class Model, class Variables,class DataType,
          class Parameters=std::decay_t<
              decltype(sample(std::declval<std::mt19937_64 &>(), std::declval<Model&>()))>>
-requires (is_model<Model,Parameters,Variables,IndexedData>)
+requires (is_model<Model,Parameters,Variables,DataType>)
 auto init_mcmc(std::mt19937_64 &mt, Model& m,
-               const IndexedData &y, const Variables &x) {
+               const DataType &y, const Variables &x) {
   auto par = sample(mt,m);
   auto logP = logPrior(m,par);
   auto logL = logLikelihood(m,par, y,x);
