@@ -11,8 +11,6 @@ using Data = Matrix<double>;
 
 using WalkerIndexes = std::vector<std::size_t>;
 
-using DataIndexes = std::vector<std::size_t>;
-using IndexedData = std::pair<DataIndexes, Data>;
 
 /*
 auto operator+(const Parameters &x, const Parameters &y) {

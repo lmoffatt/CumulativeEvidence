@@ -5,6 +5,7 @@
 #include "matrix_random.h"
 #include "mcmc.h"
 #include "maybe_error.h"
+#include "cuevi.h"
 #include <iostream>
 // using namespace std;
 
@@ -14,6 +15,9 @@ int main() {
   myseed=9762841416869310605ul;
   std::cerr<<"myseed=\n"<<myseed<<"\n";
   auto mt = init_mt(myseed);
+
+  auto d=generate_Indexes(mt,100,4,3);
+  std::cerr<<d;
 
   auto npar = 40ul;
   auto nsamples = 5000ul;
