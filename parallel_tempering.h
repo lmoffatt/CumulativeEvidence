@@ -51,9 +51,9 @@ template <class Parameters> struct thermo_mcmc {
   ensemble<by_beta<std::size_t>> i_walkers;
 };
 
-template <class Parameters>
-std::size_t num_betas(thermo_mcmc<Parameters> const &x) {
-  return x.walkers[0].size();
+template <template<class>class Thermo_mcmc,class Parameters>
+std::size_t num_betas(Thermo_mcmc<Parameters> const &x) {
+  return x.beta.size();
 }
 
 template <class Parameters>
@@ -101,7 +101,7 @@ auto var_logL(thermo_mcmc<Parameters> const &mcmc,
   auto n_walkers = num_walkers(mcmc);
   for (std::size_t iwalker = 0; iwalker < num_walkers(mcmc); ++iwalker)
     for (std::size_t ibeta = 0; ibeta < num_betas(mcmc); ++ibeta)
-      out[ibeta] =
+      out[ibeta] +=
           std::pow(mcmc.walkers[iwalker][ibeta].logL - mean[ibeta], 2) /
           n_walkers;
   return out;
@@ -149,9 +149,9 @@ auto var_logL(by_iteration<thermo_mcmc<Parameters>> const &series,
   return out;
 }
 
-auto derivative_var_ratio(by_beta<double> const &mean,
+auto derivative_var_ratio_beta(by_beta<double> const &mean,
                           by_beta<double> const &var,
-                          by_beta<double> const &beta) {
+                          by_beta<double>  const &beta) {
   by_beta<double> out(mean.size() - 1);
   for (std::size_t i = 0; i < mean.size() - 1; ++i)
   {
@@ -163,6 +163,14 @@ auto derivative_var_ratio(by_beta<double> const &mean,
 
   }
   return out;
+}
+
+
+template<class Parameters>
+auto derivative_var_ratio(by_beta<double> const &mean,
+                          by_beta<double> const &var,
+                          thermo_mcmc<Parameters>  const &current) {
+  return derivative_var_ratio_beta(mean,var,current.beta);
 }
 
 template <class Parameters>
@@ -306,11 +314,11 @@ check_iterations(std::pair<std::size_t, std::size_t> current_max,
                      false);
 };
 
-template <class Algorithm>
+template <class Algorithm, template<class>class Thermo_mcmc>
 concept is_Algorithm_conditions = requires(Algorithm &&a) {
   {
     checks_convergence(std::move(a),
-                       std::declval<const thermo_mcmc<Parameters> &>())
+                       std::declval<const Thermo_mcmc<Parameters> &>())
   } -> std::convertible_to<std::pair<Algorithm, bool>>;
 };
 
@@ -349,19 +357,36 @@ public:
     }
   }
 };
-static_assert(is_Algorithm_conditions<less_than_max_iteration>);
+static_assert(is_Algorithm_conditions<less_than_max_iteration,thermo_mcmc>);
 
+template<class Beta,class Var_ratio>
+bool compare_to_max_ratio(Beta const & beta,Var_ratio const & var_ratio,double max_ratio);
+
+bool compare_to_max_ratio(by_beta<double> const & beta, by_beta<double> const & var_ratio, double max_ratio)
+{
+  for (std::size_t i = 0; i < var_ratio.size(); ++i) {
+    std::cerr << "("<<beta[i] << " => " << var_ratio[i]<<")  ";
+    if (var_ratio[i] > max_ratio) {
+      std::cerr << "  FALSE \n";
+      return false;
+    }
+  }
+  std::cerr << " TRUE\n";
+  return true;
+}
+
+template<template<class>class Thermo_mcmc>
 class checks_derivative_var_ratio {
   std::size_t current_iteration_;
   double max_ratio_;
-  by_iteration<thermo_mcmc<Parameters>> curr_samples_;
+  by_iteration<Thermo_mcmc<Parameters>> curr_samples_;
 
 public:
   checks_derivative_var_ratio(std::size_t sample_size, double max_ratio = 2)
       : current_iteration_(0ul), max_ratio_{max_ratio},
         curr_samples_{sample_size} {}
 
-  checks_derivative_var_ratio &add(thermo_mcmc<Parameters> const &x) {
+  checks_derivative_var_ratio &add(Thermo_mcmc<Parameters> const &x) {
     curr_samples_[current_iteration_ % curr_samples_.size()] = x;
     ++current_iteration_;
     return *this;
@@ -369,30 +394,21 @@ public:
   auto &current_samples() const { return curr_samples_; }
 
   auto get_derivative_var_ratio() const {
-    auto &beta = curr_samples_[0].beta;
     auto m = mean_logL(curr_samples_);
     auto var = var_logL(current_samples(), m);
-    return derivative_var_ratio(m, var, beta);
+    return derivative_var_ratio(m, var, curr_samples_[0]);
   }
 
   bool converges() const {
     if (current_iteration_ % current_samples().size() == 0) {
       auto var_ratio = get_derivative_var_ratio();
-      for (std::size_t i = 0; i < var_ratio.size(); ++i) {
-        std::cerr << "("<<curr_samples_[0].beta[i] << " => " << var_ratio[i]<<")  ";
-        if (var_ratio[i] > max_ratio_) {
-          std::cerr << "  FALSE \n";
-          return false;
-        }
-      }
-      std::cerr << " TRUE\n";
-      return true;
+      return compare_to_max_ratio(curr_samples_[0].beta,var_ratio,max_ratio_);
     } else {
       return false;
     }
   }
   friend auto checks_convergence(checks_derivative_var_ratio &&c,
-                                 const thermo_mcmc<Parameters> &mcmc) {
+                                 const Thermo_mcmc<Parameters> &mcmc) {
     if ((c.current_iteration_ > 0) &&
         (num_betas(c.current_samples()[0]) < num_betas(mcmc))) {
       c.current_iteration_ = 0;
@@ -405,7 +421,7 @@ public:
     }
   }
 };
-static_assert(is_Algorithm_conditions<checks_derivative_var_ratio>);
+static_assert(is_Algorithm_conditions<checks_derivative_var_ratio<thermo_mcmc>,thermo_mcmc>);
 
 template <class Observer, class Parameters>
 void observe_step_stretch_thermo_mcmc(
@@ -491,6 +507,7 @@ void step_stretch_thermo_mcmc(std::size_t &iter,thermo_mcmc<Parameters> &current
 double calc_logA(double betai, double betaj, double logLi, double logLj) {
   return -(betai - betaj) * (logLi - logLj);
 }
+
 template <class Parameters, class Observer>
 void thermo_jump_mcmc(  std::size_t iter,thermo_mcmc<Parameters> &current, Observer &obs,
                       const by_beta<double> &beta, std::mt19937_64 &mt,
@@ -558,14 +575,16 @@ auto push_back_new_beta(std::size_t &iter,thermo_mcmc<Parameters> &current,
 }
 
 class save_likelihood {
+
+public:
   std::string sep = ",";
   std::ofstream f;
   std::size_t save_every = 1;
-
-public:
   save_likelihood(std::string const &path, std::size_t interval)
       : f{std::ofstream(path + "__i_beta__i_walker.csv")},
         save_every{interval} {}
+
+
 
   friend void report_title(save_likelihood &s,
                            thermo_mcmc<Parameters> const &) {
@@ -574,6 +593,9 @@ public:
         << "id_walker" << s.sep << "logP" << s.sep << "logLik"
         << "\n";
   }
+
+
+
 
   friend void report(std::size_t iter,save_likelihood &s, thermo_mcmc<Parameters> const &data) {
     if (iter % s.save_every == 0)
@@ -588,11 +610,11 @@ public:
 };
 
 class save_Evidence {
+
+public:
   std::string sep = ",";
   std::ofstream f;
   std::size_t save_every = 1;
-
-public:
   save_Evidence(std::string const &path, std::size_t interval)
       : f{std::ofstream(path + "__i_iter.csv")}, save_every{interval} {}
 
@@ -623,11 +645,11 @@ public:
 };
 
 class save_Parameter {
+
+public:
   std::string sep = ",";
   std::ofstream f;
   std::size_t save_every;
-
-public:
   save_Parameter(std::string const &path, std::size_t interval)
       : f{std::ofstream(path + "__i_beta__i_walker__i_par.csv")},
         save_every{interval} {}
@@ -652,7 +674,7 @@ public:
   }
 };
 
-template <class... saving> class save_mcmc : public observer, saving... {
+template <class... saving> class save_mcmc : public observer, public saving... {
 
   std::string directory_;
   std::string filename_prefix_;
@@ -682,7 +704,7 @@ template <class Algorithm, class Model, class Variables, class DataType,
           class Reporter,
           class Parameters = std::decay_t<decltype(sample(
               std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_Algorithm_conditions<Algorithm> &&
+  requires(is_Algorithm_conditions<Algorithm,thermo_mcmc> &&
            is_model<Model, Parameters, Variables, DataType>)
 
 auto thermo_impl(const Algorithm &alg, Model &model, const DataType &y,
@@ -749,7 +771,7 @@ auto thermo_convergence(Model model, const DataType &y, const Variables &x,
                         double n_points_per_decade, double stops_at,
                         bool includes_zero, std::size_t initseed) {
   return thermo_impl(
-      checks_derivative_var_ratio(max_iter * model.size()), model, y, x,
+      checks_derivative_var_ratio<thermo_mcmc>(max_iter * model.size()), model, y, x,
       save_mcmc<save_likelihood, save_Parameter>(path, filename, 1ul, 1ul),
       num_scouts_per_ensemble, thermo_jumps_every, n_points_per_decade,
       stops_at, includes_zero, initseed);

@@ -16,8 +16,6 @@ int main() {
   std::cerr<<"myseed=\n"<<myseed<<"\n";
   auto mt = init_mt(myseed);
 
-  auto d=generate_Indexes(mt,100,4,3);
-  std::cerr<<d;
 
   auto npar = 40ul;
   auto nsamples = 5000ul;
@@ -126,12 +124,15 @@ int main() {
                   n_points_per_decade,  stops_at,  includes_zero,
                   initseed);
 
-//  if (false)
+ if (false)
   auto opt2=thermo_convergence(linear_model,y,X,path, "Converge", num_scouts_per_ensemble,thermo_jumps_every,checks_derivative_every_model_size,
                              n_points_per_decade,  stops_at,  includes_zero,
                              initseed);
 
   // std::cout<<y;
+  auto opt3=cuevi_convergence(linear_model,y,X,path, "Converge", num_scouts_per_ensemble,thermo_jumps_every,checks_derivative_every_model_size,
+                                 n_points_per_decade,  stops_at,  includes_zero,
+                                 initseed);
 
   return 0;
 }

@@ -11,7 +11,7 @@ bidiiter randomly_extract_n(std::mt19937_64& mt,bidiiter begin, bidiiter end, st
     std::size_t left = std::distance(begin, end);
     while (num_random--) {
         bidiiter r = begin;
-        std::advance(r, std::uniform_int_distribution<std::size_t>(0, left)(mt));
+        std::advance(r, std::uniform_int_distribution<std::size_t>(0, left-1)(mt));
         std::swap(*begin, *r);
         ++begin;
         --left;
