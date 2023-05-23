@@ -100,15 +100,15 @@ auto mean_logL(by_iteration<cuevi_mcmc<Parameters>> const &series) {
   auto out = by_fraction<by_beta<double>>(size(mcmc.beta));
   auto n_walkers = size(mcmc.walkers);
   auto n_iters = size(series);
-  for (std::size_t i = 0; i < size(series); ++i)
-    for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
+  for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
 
-      out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
+    out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
+    for (std::size_t i = 0; i < size(series); ++i)
       for (std::size_t iwalker = 0; iwalker < size(mcmc.walkers); ++iwalker)
         for (std::size_t ibeta = 0; ibeta < size(mcmc.beta[i_frac]); ++ibeta)
           out[i_frac][ibeta] += series[i].walkers[iwalker][i_frac][ibeta].logL /
                                 n_iters / n_walkers;
-    }
+  }
   return out;
 }
 
@@ -118,15 +118,14 @@ auto mean_logP(by_iteration<cuevi_mcmc<Parameters>> const &series) {
   auto out = by_fraction<by_beta<double>>(size(mcmc.beta));
   auto n_walkers = size(mcmc.walkers);
   auto n_iters = size(series);
-  for (std::size_t i = 0; i < size(series); ++i)
-    for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
-
-      out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
+  for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
+    out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
+    for (std::size_t i = 0; i < size(series); ++i)
       for (std::size_t iwalker = 0; iwalker < size(mcmc.walkers); ++iwalker)
         for (std::size_t ibeta = 0; ibeta < size(mcmc.beta[i_frac]); ++ibeta)
           out[i_frac][ibeta] += series[i].walkers[iwalker][i_frac][ibeta].logP /
                                 n_iters / n_walkers;
-    }
+  }
   return out;
 }
 
@@ -137,11 +136,11 @@ auto var_logL(by_iteration<cuevi_mcmc<Parameters>> const &series,
   auto out = by_fraction<by_beta<double>>(size(mcmc.beta));
   auto n_walkers = size(mcmc.walkers);
   auto n_iters = size(series);
-  for (std::size_t i = 0; i < size(series); ++i)
-    for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
-
-      out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
-      for (std::size_t iwalker = 0; iwalker < size(series[0].beta); ++iwalker)
+  for (std::size_t i_frac = 0; i_frac < size(mcmc.beta); ++i_frac) {
+    out[i_frac] = by_beta<double>(size(mcmc.beta[i_frac]), 0.0);
+    for (std::size_t i = 0; i < size(series); ++i)
+      for (std::size_t iwalker = 0; iwalker < size(series[0].walkers);
+           ++iwalker)
         for (std::size_t ibeta = 0; ibeta < size(series[0].beta[i_frac]);
              ++ibeta)
           out[i_frac][ibeta] +=
@@ -149,7 +148,7 @@ auto var_logL(by_iteration<cuevi_mcmc<Parameters>> const &series,
                            mean[i_frac][ibeta],
                        2) /
               n_iters / n_walkers;
-    }
+  }
   return out;
 }
 
@@ -313,7 +312,7 @@ void double_step_stretch_cuevi_mcmc(
         current.walkers[iw][i_fr][ib].logP, ca_logP,
         current.walkers[iw][i_fr][ib].logL, ca_logL1, pJump >= r);
     if (pJump >= r) {
-      current.walkers[iw][i_fr][ib].parameter = std::move(ca_par);
+      current.walkers[iw][i_fr][ib].parameter = ca_par;
       current.walkers[iw][i_fr][ib].logPa = ca_logP.value();
       current.walkers[iw][i_fr][ib].logP = ca_logP.value();
       current.walkers[iw][i_fr][ib].logL = ca_logL0.value();
@@ -408,7 +407,7 @@ void triple_step_stretch_cuevi_mcmc(
         current.walkers[iw][i_fr][ib].logP, ca_logP,
         current.walkers[iw][i_fr][ib].logL, ca_logL0, pJump >= r);
     if (pJump >= r) {
-      current.walkers[iw][i_fr][ib].parameter = std::move(ca_par);
+      current.walkers[iw][i_fr][ib].parameter = ca_par;
       current.walkers[iw][i_fr][ib].logPa = ca_logP.value();
       current.walkers[iw][i_fr][ib].logP = ca_logP.value() + ca_logL0.value();
       current.walkers[iw][i_fr][ib].logL = ca_logL1.value() - ca_logL0.value();
@@ -493,7 +492,7 @@ void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
                                                             uniform_real);
 
   for (bool half : {false, true})
-#pragma omp parallel for
+    // #pragma omp parallel for
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = udist[i](mt[i]);
@@ -527,7 +526,7 @@ void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
         }
         for (std::size_t i_fr = current.beta.size() - 1;
              i_fr < current.beta.size(); ++i_fr) {
-          for (std::size_t ib = 1; ib < current.walkers[i_fr].size(); ++ib)
+          for (std::size_t ib = 1; ib < current.beta[i_fr].size(); ++ib)
             last_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
                                          n_par, i, iw, jw, ib, i_fr);
         }
@@ -552,10 +551,11 @@ auto generate_random_Indexes(std::mt19937_64 &mt, std::size_t num_samples,
   auto out = std::vector<DataIndexes>(n_jumps);
   auto index = DataIndexes(num_samples);
   std::iota(index.begin(), index.end(), 0u);
-  auto it = index.begin();
-  std::size_t n = 0;
-  for (auto i = 0u; i < n_jumps; ++i) {
-    n = indexsizes[i] - n;
+  auto it = randomly_extract_n(mt, index.begin(), index.end(), indexsizes[0]);
+  std::sort(index.begin(), it);
+  out[0] = DataIndexes(index.begin(), it);
+  for (auto i = 1u; i < n_jumps; ++i) {
+    auto n = (indexsizes[i] - indexsizes[i - 1]);
     it = randomly_extract_n(mt, it, index.end(), n);
     std::sort(index.begin(), it);
     out[i] = DataIndexes(index.begin(), it);
@@ -567,7 +567,7 @@ struct fractioner {
   auto operator()(const Matrix<double> &y, const Matrix<double> &x,
                   std::mt19937_64 &mt, std::size_t num_parameters,
                   double num_jumps_per_decade, double stops_at,
-                  bool includes_zero) {
+                  bool includes_zero)const {
     assert(y.nrows() == x.nrows());
     std::size_t num_samples = size(y);
     auto indexes = generate_random_Indexes(mt, num_samples, num_parameters,
@@ -592,7 +592,9 @@ struct fractioner {
     x_out[n_frac - 1] = x;
     y_out[n_frac - 1] = y;
 
-    auto beta0 = get_beta_list(num_jumps_per_decade, stops_at, includes_zero);
+    auto beta0 =
+        get_beta_list(num_jumps_per_decade,
+                      stops_at * num_samples / size(indexes[0]), includes_zero);
     by_beta<double> betan = {0, 1};
     by_fraction<by_beta<double>> beta(n_frac, betan);
     beta[0] = std::move(beta0);
@@ -774,19 +776,20 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
           auto ca_logP1 = ca_wa1.logPa + ca_wa1.logL;
           auto ca_logL11 = logLikelihood(model, ca_par1, y[i_frac_old + 1],
                                          x[i_frac_old + 1]);
-          if (!(ca_logL11))
+          if (!(ca_logL11)) {
             return ca_logL11.error() + " push back new fraction at walker " +
                    std::to_string(iw) + "of fraction " +
                    std::to_string(i_frac_old + 1) + " beta 0";
-          auto ca_logL1 = ca_logL11.value() - ca_logP1 + ca_logPa1;
-          current.walkers[iw][i_frac_old + 1][1] = {
-              {ca_par1, ca_logP1, ca_logL1}, ca_logPa1};
-          current.i_walkers[iw][i_frac_old + 1][1] = new_i_walkers[iw];
+          } else {
+            auto ca_logL1 = ca_logL11.value() - ca_logP1 + ca_logPa1;
+            current.walkers[iw][i_frac_old + 1][1] = {
+                {ca_par1, ca_logP1, ca_logL1}, ca_logPa1};
+            current.i_walkers[iw][i_frac_old + 1][1] = new_i_walkers[iw];
+          }
         }
-      current.beta[i_frac_old + 1].insert(current.beta[i_frac_old + 1].end(),
-                                          final_beta[i_frac_old + 1].begin(),
-                                          final_beta[i_frac_old + 1].begin() +
-                                              2);
+      auto new_beta = by_beta<double>{0.0, 1.0};
+      current.beta.push_back(new_beta);
+      current.nsamples.push_back(size(y[n_frac_old]));
       return current;
     }
   }
@@ -845,7 +848,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                         current.i_walkers[jw][i_fr][ib + 1]);
             }
           }
-         }
+        }
       else {
         for (std::size_t i_fr = 0; i_fr < 1; ++i_fr) {
           for (std::size_t ib = 0; ib < current.beta[i_fr].size() - 2; ++ib) {
@@ -870,8 +873,8 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                         current.i_walkers[jw][i_fr][ib + 1]);
             }
           }
-          for (std::size_t ib = current.beta[i_fr].size() - 1;
-               ib < current.beta[i_fr].size(); ++ib) {
+          for (std::size_t ib = current.beta[i_fr].size() - 2;
+               ib < current.beta[i_fr].size() - 1; ++ib) {
 
             auto r = rdist[i](mts[i]);
             double logA =
@@ -1089,12 +1092,10 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                 std::swap(current.i_walkers[iw][i_fr][ib],
                           current.i_walkers[jw][i_fr][ib + 1]);
                 auto ib0 = current.beta[i_fr - 1].size() - 1;
-                current.walkers[iw][i_fr - 1][ib0].parameter = ca_par_0;
-                current.walkers[iw][i_fr - 1][ib0].logPa = ca_logPa_0;
-                current.walkers[iw][i_fr - 1][ib0].logP =
-                    ca_logPa_0 + ca_logL_00.value();
-                current.walkers[iw][i_fr - 1][ib0].logL =
-                    ca_logP_0 - ca_logPa_0 - ca_logL_00.value();
+                auto cai_logP = ca_logPa_0 + ca_logL_00.value();
+                auto cai_logL = ca_logP_0 - ca_logPa_0 - ca_logL_00.value();
+                current.walkers[iw][i_fr - 1][ib0] = mcmc2<Parameters>{
+                    mcmc<Parameters>{ca_par_0, cai_logP, cai_logL}, ca_logPa_0};
               }
             }
           }
@@ -1141,13 +1142,15 @@ auto derivative_var_ratio(by_fraction<by_beta<double>> const &mean,
 
 template <>
 bool compare_to_max_ratio(by_fraction<by_beta<double>> const &beta,
+                          by_fraction<by_beta<double>> const &mean_logL,
                           by_fraction<by_beta<double>> const &var_ratio,
                           double max_ratio) {
   for (std::size_t i_frac = 0; i_frac < size(var_ratio); ++i_frac) {
     for (std::size_t ib = 0; ib < size(var_ratio[i_frac]); ++ib) {
-      std::cerr << "(" << beta[i_frac][ib] << " => " << var_ratio[i_frac][ib]
-                << ")  ";
-      if (var_ratio[i_frac][ib] > max_ratio) {
+      std::cerr << "(" << beta[i_frac][ib] << "[~" << mean_logL[i_frac][ib]
+                << "]=> " << var_ratio[i_frac][ib] << ")  ";
+      if ((var_ratio[i_frac][ib] > max_ratio) ||
+          (var_ratio[i_frac][ib] < 1.0 / max_ratio)) {
         std::cerr << "  FALSE \n";
         return false;
       }
@@ -1165,8 +1168,8 @@ template <class Algorithm, class Model, class Variables, class DataType,
            is_model<Model, Parameters, Variables, DataType>)
 
 auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
-                const Variables &x, const Fractioner frac, Reporter rep,
-                std::size_t num_scouts_per_ensemble,
+                const Variables &x, const Fractioner& frac, Reporter rep,
+                std::size_t num_scouts_per_ensemble, double min_fraction,
                 std::size_t thermo_jumps_every, double n_points_per_decade,
                 double stops_at, bool includes_zero, std::size_t initseed) {
 
@@ -1174,10 +1177,11 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
   auto mt = init_mt(initseed);
   auto n_walkers = num_scouts_per_ensemble;
   auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
-  auto [ys, xs, beta_final] = fractioner{}(
-      y, x, mt, size(model), n_points_per_decade, stops_at, includes_zero);
+  auto [ys, xs, beta_final] =
+      frac(y, x, mt, size(model) * min_fraction, n_points_per_decade, stops_at,
+           includes_zero);
   auto beta_init =
-      by_beta<double>(beta_final[0].rend() - 2, beta_final[0].rend());
+      by_beta<double>(beta_final[0].begin(), beta_final[0].begin() + 2);
   auto current = init_cuevi_mcmc(n_walkers, beta_init, mts, model, ys, xs);
   auto mcmc_run = checks_convergence(std::move(a), current);
   std::size_t iter = 0;
@@ -1192,7 +1196,7 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
       report(iter, rep, current);
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
     }
-    if (size(ys) < size(current.beta)) {
+    if (size(current.beta) < size(ys)) {
       auto is_current =
           push_back_new_fraction(current, mts, beta_final, model, ys, xs);
       while (!(is_current)) {
@@ -1205,7 +1209,8 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
             push_back_new_fraction(current, mts, beta_final, model, ys, xs);
       }
       current = std::move(is_current.value());
-      std::cerr << "\n  beta_run=" << current.beta.back() << "\n";
+      std::cerr << "\n  nsamples=" << current.nsamples.back()
+                << "   beta_run=" << current.beta.back().back() << "\n";
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
     }
   }
@@ -1219,16 +1224,16 @@ template <class Model, class Variables, class DataType,
   requires(is_model<Model, Parameters, Variables, DataType>)
 auto cuevi_convergence(Model model, const DataType &y, const Variables &x,
                        std::string path, std::string filename,
-                       std::size_t num_scouts_per_ensemble,
-                       std::size_t thermo_jumps_every, std::size_t max_iter,
+                       std::size_t num_scouts_per_ensemble, double min_fraction,
+                       std::size_t thermo_jumps_every, std::size_t max_iter, double max_ratio,
                        double n_points_per_decade, double stops_at,
                        bool includes_zero, std::size_t initseed) {
   return cuevi_impl(
-      checks_derivative_var_ratio<cuevi_mcmc>(max_iter * model.size()), model,
+      checks_derivative_var_ratio<cuevi_mcmc>(max_iter * model.size(), max_ratio), model,
       y, x, fractioner{},
-      save_mcmc<save_likelihood, save_Parameter>(path, filename, 1ul, 1ul),
-      num_scouts_per_ensemble, thermo_jumps_every, n_points_per_decade,
-      stops_at, includes_zero, initseed);
+      save_mcmc<save_likelihood, save_Parameter>(path, filename, 1ul, 100ul),
+      num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
+      n_points_per_decade, stops_at, includes_zero, initseed);
 }
 
 #endif // CUEVI_H

@@ -360,12 +360,12 @@ public:
 static_assert(is_Algorithm_conditions<less_than_max_iteration,thermo_mcmc>);
 
 template<class Beta,class Var_ratio>
-bool compare_to_max_ratio(Beta const & beta,Var_ratio const & var_ratio,double max_ratio);
+bool compare_to_max_ratio(Beta const & beta,Var_ratio const & mean_logL,Var_ratio const & var_ratio,double max_ratio);
 
-bool compare_to_max_ratio(by_beta<double> const & beta, by_beta<double> const & var_ratio, double max_ratio)
+bool compare_to_max_ratio(by_beta<double> const & beta, by_beta<double> const & mean_logL,by_beta<double> const & var_ratio, double max_ratio)
 {
   for (std::size_t i = 0; i < var_ratio.size(); ++i) {
-    std::cerr << "("<<beta[i] << " => " << var_ratio[i]<<")  ";
+    std::cerr << "("<<beta[i]<<"[~"<<mean_logL[i] << "]=> " << var_ratio[i]<<")  ";
     if (var_ratio[i] > max_ratio) {
       std::cerr << "  FALSE \n";
       return false;
@@ -396,13 +396,13 @@ public:
   auto get_derivative_var_ratio() const {
     auto m = mean_logL(curr_samples_);
     auto var = var_logL(current_samples(), m);
-    return derivative_var_ratio(m, var, curr_samples_[0]);
+    return std::tuple(m,derivative_var_ratio(m, var, curr_samples_[0]));
   }
 
   bool converges() const {
     if (current_iteration_ % current_samples().size() == 0) {
-      auto var_ratio = get_derivative_var_ratio();
-      return compare_to_max_ratio(curr_samples_[0].beta,var_ratio,max_ratio_);
+      auto [meanL, var_ratio] = get_derivative_var_ratio();
+      return compare_to_max_ratio(curr_samples_[0].beta,meanL,var_ratio,max_ratio_);
     } else {
       return false;
     }
