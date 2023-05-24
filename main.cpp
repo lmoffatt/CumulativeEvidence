@@ -97,7 +97,7 @@ int main() {
 
   std::size_t num_scouts_per_ensemble = 32;
   double n_points_per_decade = 3;
-  double stops_at = 1e-6;
+  double stops_at = 1e-7;
   bool includes_zero = true;
   std::size_t max_iter = 5000;
   std::string path = "";
@@ -108,7 +108,7 @@ int main() {
   std::size_t checks_derivative_every_model_size = 1000;
   double max_ratio=4;
 
-  double min_fraction=10;
+  double min_fraction=1;
   auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
 
   auto mean_logLik = bayesian_linear_regression_calculate_mean_logLik(
@@ -133,7 +133,7 @@ int main() {
   // std::cout<<y;
   if (true)
   auto opt3 = cuevi_convergence(
-      linear_model, y, X, path, "CConvergeNonParallel", num_scouts_per_ensemble,min_fraction,
+      linear_model, y, X, path, "EvConvergeParallel", num_scouts_per_ensemble,min_fraction,
       thermo_jumps_every, checks_derivative_every_model_size,max_ratio,
       n_points_per_decade, stops_at, includes_zero, initseed);
 

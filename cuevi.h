@@ -29,7 +29,7 @@ template <class Parameters> struct cuevi_mcmc {
   friend void report_title(save_Evidence &s, cuevi_mcmc<Parameters> const &) {
 
     s.f << "n_fractions" << s.sep << "n_betas" << s.sep << "iter" << s.sep
-        << "beta" << s.sep << "meanPrior" << s.sep << "meanLik" << s.sep
+        << "nsamples" << s.sep << "beta" << s.sep << "meanPrior" << s.sep << "meanLik" << s.sep
         << "varLik" << s.sep << "Evidence_mean" << s.sep << "Evidence_var"
         << "\n";
   }
@@ -222,7 +222,7 @@ void report(std::size_t iter, save_Evidence &s,
     auto Evidence1 = calculate_Evidence(data.beta, meanLik);
     for (std::size_t i_frac = 0; i_frac < size(data.beta); ++i_frac)
       for (std::size_t i_beta = 0; i_beta < size(data.beta[i_frac]); ++i_beta)
-        if (data.beta[i_frac][0] == 1) {
+        if (data.beta[i_frac].back() == 1) {
           s.f << size(data.beta) << s.sep << size(data.beta[i_frac]) << s.sep
               << iter << s.sep << data.nsamples[i_frac] << s.sep
               << data.beta[i_frac][i_beta] << s.sep << meanPrior[i_frac][i_beta]
@@ -1196,7 +1196,7 @@ auto cuevi_convergence(Model model, const DataType &y, const Variables &x,
   return cuevi_impl(
       checks_derivative_var_ratio<cuevi_mcmc>(max_iter * model.size(), max_ratio), model,
       y, x, fractioner{},
-      save_mcmc<save_likelihood, save_Parameter>(path, filename, 1ul, 100ul),
+      save_mcmc<save_likelihood, save_Parameter,save_Evidence>(path, filename, 1ul, 100ul,10ul),
       num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
       n_points_per_decade, stops_at, includes_zero, initseed);
 }
