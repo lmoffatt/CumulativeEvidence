@@ -639,7 +639,7 @@ auto init_cuevi_mcmc(std::size_t n_walkers, by_beta<double> const &beta,
                      1, by_beta<mcmc2<Parameters>>(beta.size())));
 
   for (std::size_t half = 0; half < 2; ++half)
-#pragma omp parallel for
+//#pragma omp parallel for
     for (std::size_t iiw = 0; iiw < n_walkers / 2; ++iiw) {
       auto iw = iiw + half * n_walkers / 2;
       for (std::size_t i = 0; i < beta.size(); ++i) {
@@ -662,7 +662,8 @@ template <class Model, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
               std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
   requires(is_model<Model, Parameters, Variables, DataType>)
-Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
+Maybe_error<cuevi_mcmc<Parameters>>
+push_back_new_fraction(
     const cuevi_mcmc<Parameters> &current_old, ensemble<std::mt19937_64> &mts,
     const by_fraction<by_beta<double>> &final_beta, Model &model,
     const by_fraction<DataType> &y, const by_fraction<Variables> &x) {
@@ -711,7 +712,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
             auto &ca_wa = current.walkers[iw][i_frac - 1].back();
             auto ca_logPa = ca_wa.logPa;
             auto ca_par = ca_wa.parameter;
-            auto ca_logP = ca_wa.logPa + ca_wa.logL;
+            auto ca_logP = ca_wa.logP + ca_wa.logL;
             auto ca_logL1 = logLikelihood(model, ca_par, y[i_frac], x[i_frac]);
             if (!(ca_logL1))
               return ca_logL1.error() + " push back new fraction at walker " +
@@ -757,7 +758,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
           auto &ca_wa0 = current.walkers[iw][i_frac_old].back();
           auto ca_logPa0 = ca_wa0.logPa;
           auto ca_par0 = ca_wa0.parameter;
-          auto ca_logP0 = ca_wa0.logPa + ca_wa0.logL;
+          auto ca_logP0 = ca_wa0.logP + ca_wa0.logL;
           auto ca_logL10 = logLikelihood(model, ca_par0, y[i_frac_old + 1],
                                          x[i_frac_old + 1]);
           if (!(ca_logL10))
@@ -773,7 +774,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
           auto &ca_wa1 = new_walkers[iw];
           auto ca_logPa1 = ca_wa1.logPa;
           auto ca_par1 = ca_wa1.parameter;
-          auto ca_logP1 = ca_wa1.logPa + ca_wa1.logL;
+          auto ca_logP1 = ca_wa1.logP + ca_wa1.logL;
           auto ca_logL11 = logLikelihood(model, ca_par1, y[i_frac_old + 1],
                                          x[i_frac_old + 1]);
           if (!(ca_logL11)) {
@@ -818,7 +819,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
     std::vector<std::uniform_real_distribution<double>> rdist(n_walkers,
                                                               uniform_real);
 
-    // #pragma omp parallel for
+  //   #pragma omp parallel for   // not currently working
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = landing_walker[i];
@@ -902,10 +903,10 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                 std::swap(current.i_walkers[iw][i_fr][ib],
                           current.i_walkers[jw][i_fr][ib + 1]);
                 if (size(current.beta) > 1) {
-                  current.walkers[iw][i_fr + 1][0].parameter = ca_par;
-                  current.walkers[iw][i_fr + 1][0].logPa = ca_logPa;
-                  current.walkers[iw][i_fr + 1][0].logP = ca_logP + ca_logL0;
-                  current.walkers[iw][i_fr + 1][0].logL =
+                  current.walkers[jw][i_fr + 1][0].parameter = ca_par;
+                  current.walkers[jw][i_fr + 1][0].logPa = ca_logPa;
+                  current.walkers[jw][i_fr + 1][0].logP = ca_logP + ca_logL0;
+                  current.walkers[jw][i_fr + 1][0].logL =
                       ca_logL1.value() - ca_logL0 - ca_logP + ca_logPa;
                 }
               }
@@ -934,8 +935,8 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                 auto ca_logL_11 =
                     logLikelihood(model, ca_par_1, y[i_fr + 1], x[i_fr + 1]);
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-                auto ca_logL_00 =
-                    logLikelihood(model, ca_par_0, y[i_fr - 1], x[i_fr - 1]);
+                auto ca_logL_00 =i_fr==1? Maybe_error<double>{0.0}:
+                    logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
                 if ((ca_logL_11) && (ca_logL_00)) {
                   auto ca_logPa_1 = current.walkers[iw][i_fr][ib].logPa;
                   auto ca_logP_1 = current.walkers[iw][i_fr][ib].logP;
@@ -981,8 +982,8 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
               if (pJump > r) {
 
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-                auto ca_logL_00 =
-                    logLikelihood(model, ca_par_0, y[i_fr - 1], x[i_fr - 1]);
+                auto ca_logL_00 =i_fr==1? Maybe_error<double>{0.0}:
+                    logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
                 if (ca_logL_00) {
                   auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
                   auto ca_logP_0 = current.walkers[jw][i_fr][ib + 1].logP;
@@ -1024,42 +1025,6 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
               }
             }
           }
-          for (std::size_t ib = current.beta[i_fr].size() - 2;
-               ib + 1 < current.beta[i_fr].size(); ++ib) {
-
-            auto r = rdist[i](mts[i]);
-            double logA =
-                calc_logA(current.beta[i_fr][ib], current.beta[i_fr][ib + 1],
-                          current.walkers[iw][i_fr][ib].logL,
-                          current.walkers[jw][i_fr][ib + 1].logL);
-            auto pJump = std::min(1.0, std::exp(logA));
-            observe_thermo_jump_mcmc(
-                obs[iw][ib], jw, current.walkers[iw][i_fr][ib].parameter,
-                current.walkers[jw][i_fr][ib + 1].parameter,
-                current.walkers[iw][i_fr][ib].logL,
-                current.walkers[jw][i_fr][ib + 1].logL,
-                -(current.beta[i_fr][ib] - current.beta[i_fr][ib + 1]), logA,
-                pJump, r, pJump > r);
-            if (pJump > r) {
-              auto ca_par_1 = current.walkers[iw][i_fr][ib].parameter;
-              auto ca_logL_11 =
-                  logLikelihood(model, ca_par_1, y[i_fr + 1], x[i_fr + 1]);
-              if (ca_logL_11) {
-                auto ca_logPa_1 = current.walkers[iw][i_fr][ib].logPa;
-                auto ca_logP_1 = current.walkers[iw][i_fr][ib].logP;
-                auto ca_logL_1 = current.walkers[iw][i_fr][ib].logL;
-                std::swap(current.walkers[iw][i_fr][ib],
-                          current.walkers[jw][i_fr][ib + 1]);
-                std::swap(current.i_walkers[iw][i_fr][ib],
-                          current.i_walkers[jw][i_fr][ib + 1]);
-                current.walkers[jw][i_fr + 1][0].parameter = ca_par_1;
-                current.walkers[jw][i_fr + 1][0].logPa = ca_logPa_1;
-                current.walkers[jw][i_fr + 1][0].logP = ca_logP_1 + ca_logL_1;
-                current.walkers[jw][i_fr + 1][0].logL =
-                    ca_logL_11.value() - ca_logL_1 - ca_logP_1 + ca_logPa_1;
-              }
-            }
-          }
         }
         for (std::size_t i_fr = std::max(1ul, current.beta.size() - 1);
              i_fr < current.beta.size(); ++i_fr) {
@@ -1081,8 +1046,8 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
             if (pJump > r) {
 
               auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-              auto ca_logL_00 =
-                  logLikelihood(model, ca_par_0, y[i_fr - 1], x[i_fr - 1]);
+              auto ca_logL_00 = i_fr==1? Maybe_error<double>{0.0}:
+                  logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
               if (ca_logL_00) {
                 auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
                 auto ca_logP_0 = current.walkers[jw][i_fr][ib + 1].logP;

@@ -17,7 +17,7 @@ int main() {
   auto mt = init_mt(myseed);
 
   auto npar = 4ul;
-  auto nsamples = 500ul;
+  auto nsamples = 5000ul;
   auto log10_std_par = 1.0;
 
   auto mean_mean_par = 0.0;
@@ -103,9 +103,9 @@ int main() {
   std::string path = "";
   std::string filename = "A";
 
-  std::size_t thermo_jumps_every = linear_model.size()*1e6;
+  std::size_t thermo_jumps_every = linear_model.size()*1e0;
 
-  std::size_t checks_derivative_every_model_size = 200;
+  std::size_t checks_derivative_every_model_size = 1000;
   double max_ratio=4;
 
   double min_fraction=10;
@@ -133,7 +133,7 @@ int main() {
   // std::cout<<y;
   if (true)
   auto opt3 = cuevi_convergence(
-      linear_model, y, X, path, "Converge", num_scouts_per_ensemble,min_fraction,
+      linear_model, y, X, path, "CConvergeNonParallel", num_scouts_per_ensemble,min_fraction,
       thermo_jumps_every, checks_derivative_every_model_size,max_ratio,
       n_points_per_decade, stops_at, includes_zero, initseed);
 
