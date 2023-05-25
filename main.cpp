@@ -17,7 +17,7 @@ int main() {
   auto mt = init_mt(myseed);
 
   auto npar = 4ul;
-  auto nsamples = 5000ul;
+  auto nsamples = 500ul;
   auto log10_std_par = 1.0;
 
   auto mean_mean_par = 0.0;
@@ -96,8 +96,9 @@ int main() {
                          Matrix<double>>);
 
   std::size_t num_scouts_per_ensemble = 32;
-  double n_points_per_decade = 3;
-  double stops_at = 1e-7;
+  double n_points_per_decade = 12;
+  double n_points_per_decade_fraction=3;
+  double stops_at = 1e-6;
   bool includes_zero = true;
   std::size_t max_iter = 5000;
   std::string path = "";
@@ -106,9 +107,9 @@ int main() {
   std::size_t thermo_jumps_every = linear_model.size()*1e0;
 
   std::size_t checks_derivative_every_model_size = 1000;
-  double max_ratio=4;
+  double max_ratio=8;
 
-  double min_fraction=1;
+  double min_fraction=10;
   auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
 
   auto mean_logLik = bayesian_linear_regression_calculate_mean_logLik(
@@ -126,16 +127,16 @@ int main() {
 
   if (false)
     auto opt2 = thermo_convergence(
-        linear_model, y, X, path, "Converge", num_scouts_per_ensemble,
+        linear_model, y, X, path, "thermo_6", num_scouts_per_ensemble,
         thermo_jumps_every, checks_derivative_every_model_size,
         n_points_per_decade, stops_at, includes_zero, initseed);
 
   // std::cout<<y;
   if (true)
   auto opt3 = cuevi_convergence(
-      linear_model, y, X, path, "EvConvergeParallel", num_scouts_per_ensemble,min_fraction,
+      linear_model, y, X, path, "cuevi_10_7_6", num_scouts_per_ensemble,min_fraction,
       thermo_jumps_every, checks_derivative_every_model_size,max_ratio,
-      n_points_per_decade, stops_at, includes_zero, initseed);
+      n_points_per_decade,n_points_per_decade_fraction, stops_at, includes_zero, initseed);
 
   return 0;
 }
