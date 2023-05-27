@@ -29,8 +29,9 @@ template <class Parameters> struct cuevi_mcmc {
   friend void report_title(save_Evidence &s, cuevi_mcmc<Parameters> const &) {
 
     s.f << "n_fractions" << s.sep << "n_betas" << s.sep << "iter" << s.sep
-        << "nsamples" << s.sep << "beta" << s.sep << "meanPrior" << s.sep << "meanLik" << s.sep
-        << "varLik" << s.sep << "fraction_Evidence_by_mean" << s.sep << "fraction_Evidence_by_var"
+        << "nsamples" << s.sep << "beta" << s.sep << "meanPrior" << s.sep
+        << "meanLik" << s.sep << "varLik" << s.sep
+        << "fraction_Evidence_by_mean" << s.sep << "fraction_Evidence_by_var"
         << s.sep << "Evidence_by_mean" << s.sep << "Evidence_by_var"
         << "\n";
   }
@@ -222,14 +223,12 @@ void report(std::size_t iter, save_Evidence &s,
     auto partial_Evidence2 = calculate_Evidence(data.beta, meanLik, varLik);
     auto partial_Evidence1 = calculate_Evidence(data.beta, meanLik);
 
-    double Evidence1=0;
-    double Evidence2=0;
-    for (std::size_t i_frac = 0; i_frac < size(data.beta); ++i_frac)
-    {
-      Evidence1+=partial_Evidence1[i_frac];
-      Evidence2+=partial_Evidence2[i_frac];
+    double Evidence1 = 0;
+    double Evidence2 = 0;
+    for (std::size_t i_frac = 0; i_frac < size(data.beta); ++i_frac) {
+      Evidence1 += partial_Evidence1[i_frac];
+      Evidence2 += partial_Evidence2[i_frac];
     }
-
 
     for (std::size_t i_frac = 0; i_frac < size(data.beta); ++i_frac)
       for (std::size_t i_beta = 0; i_beta < size(data.beta[i_frac]); ++i_beta)
@@ -238,9 +237,9 @@ void report(std::size_t iter, save_Evidence &s,
               << iter << s.sep << data.nsamples[i_frac] << s.sep
               << data.beta[i_frac][i_beta] << s.sep << meanPrior[i_frac][i_beta]
               << s.sep << meanLik[i_frac][i_beta] << s.sep
-              << varLik[i_frac][i_beta] << s.sep << partial_Evidence1[i_frac] << s.sep
-              << partial_Evidence2[i_frac]<<s.sep << Evidence1
-              <<s.sep << Evidence2 << "\n";
+              << varLik[i_frac][i_beta] << s.sep << partial_Evidence1[i_frac]
+              << s.sep << partial_Evidence2[i_frac] << s.sep << Evidence1
+              << s.sep << Evidence2 << "\n";
         }
   }
 }
@@ -504,7 +503,7 @@ void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
                                                             uniform_real);
 
   for (bool half : {false, true})
-     #pragma omp parallel for
+#pragma omp parallel for
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = udist[i](mt[i]);
@@ -552,25 +551,27 @@ auto generate_random_Indexes(std::mt19937_64 &mt, std::size_t num_samples,
                              std::size_t num_parameters,
                              double num_jumps_per_decade) {
 
-  std::size_t n_jumps =
-      std::floor(num_jumps_per_decade *
-                 (std::log10(num_samples) - std::log10(2 * num_parameters)));
+  std::size_t n_jumps = std::max(
+      0.0, std::floor(num_jumps_per_decade * (std::log10(num_samples) -
+                                              std::log10(2 * num_parameters))));
   auto indexsizes = DataIndexes(n_jumps);
 
   for (std::size_t i = 0; i < n_jumps; ++i)
     indexsizes[i] = num_samples * std::pow(10.0, -(1.0 * (n_jumps - i)) /
                                                      num_jumps_per_decade);
   auto out = std::vector<DataIndexes>(n_jumps);
-  auto index = DataIndexes(num_samples);
-  std::iota(index.begin(), index.end(), 0u);
-  auto it = randomly_extract_n(mt, index.begin(), index.end(), indexsizes[0]);
-  std::sort(index.begin(), it);
-  out[0] = DataIndexes(index.begin(), it);
-  for (auto i = 1u; i < n_jumps; ++i) {
-    auto n = (indexsizes[i] - indexsizes[i - 1]);
-    it = randomly_extract_n(mt, it, index.end(), n);
+  if (n_jumps > 0) {
+    auto index = DataIndexes(num_samples);
+    std::iota(index.begin(), index.end(), 0u);
+    auto it = randomly_extract_n(mt, index.begin(), index.end(), indexsizes[0]);
     std::sort(index.begin(), it);
-    out[i] = DataIndexes(index.begin(), it);
+    out[0] = DataIndexes(index.begin(), it);
+    for (auto i = 1u; i < n_jumps; ++i) {
+      auto n = (indexsizes[i] - indexsizes[i - 1]);
+      it = randomly_extract_n(mt, it, index.end(), n);
+      std::sort(index.begin(), it);
+      out[i] = DataIndexes(index.begin(), it);
+    }
   }
   return out;
 }
@@ -580,7 +581,7 @@ struct fractioner {
                   std::mt19937_64 &mt, std::size_t num_parameters,
                   double n_points_per_decade_beta,
                   double n_points_per_decade_fraction, double stops_at,
-                  bool includes_zero)const {
+                  bool includes_zero) const {
     assert(y.nrows() == x.nrows());
     std::size_t num_samples = size(y);
     auto indexes = generate_random_Indexes(mt, num_samples, num_parameters,
@@ -607,7 +608,7 @@ struct fractioner {
 
     auto beta0 =
         get_beta_list(n_points_per_decade_beta,
-                      stops_at * num_samples / size(indexes[0]), includes_zero);
+                               stops_at * num_samples / (n_frac>1? size(indexes[0]):1), includes_zero);
     by_beta<double> betan = {0, 1};
     by_fraction<by_beta<double>> beta(n_frac, betan);
     beta[0] = std::move(beta0);
@@ -675,8 +676,7 @@ template <class Model, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
               std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
   requires(is_model<Model, Parameters, Variables, DataType>)
-Maybe_error<cuevi_mcmc<Parameters>>
-push_back_new_fraction(
+Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
     const cuevi_mcmc<Parameters> &current_old, ensemble<std::mt19937_64> &mts,
     const by_fraction<by_beta<double>> &final_beta, Model &model,
     const by_fraction<DataType> &y, const by_fraction<Variables> &x) {
@@ -832,7 +832,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
     std::vector<std::uniform_real_distribution<double>> rdist(n_walkers,
                                                               uniform_real);
 
-     #pragma omp parallel for   // not currently working
+#pragma omp parallel for // not currently working
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = landing_walker[i];
@@ -948,8 +948,10 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                 auto ca_logL_11 =
                     logLikelihood(model, ca_par_1, y[i_fr + 1], x[i_fr + 1]);
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-                auto ca_logL_00 =i_fr==1? Maybe_error<double>{0.0}:
-                    logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
+                auto ca_logL_00 = i_fr == 1
+                                      ? Maybe_error<double>{0.0}
+                                      : logLikelihood(model, ca_par_0,
+                                                      y[i_fr - 2], x[i_fr - 2]);
                 if ((ca_logL_11) && (ca_logL_00)) {
                   auto ca_logPa_1 = current.walkers[iw][i_fr][ib].logPa;
                   auto ca_logP_1 = current.walkers[iw][i_fr][ib].logP;
@@ -995,8 +997,10 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
               if (pJump > r) {
 
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-                auto ca_logL_00 =i_fr==1? Maybe_error<double>{0.0}:
-                    logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
+                auto ca_logL_00 = i_fr == 1
+                                      ? Maybe_error<double>{0.0}
+                                      : logLikelihood(model, ca_par_0,
+                                                      y[i_fr - 2], x[i_fr - 2]);
                 if (ca_logL_00) {
                   auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
                   auto ca_logP_0 = current.walkers[jw][i_fr][ib + 1].logP;
@@ -1059,8 +1063,10 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
             if (pJump > r) {
 
               auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
-              auto ca_logL_00 = i_fr==1? Maybe_error<double>{0.0}:
-                  logLikelihood(model, ca_par_0, y[i_fr - 2], x[i_fr - 2]);
+              auto ca_logL_00 = i_fr == 1
+                                    ? Maybe_error<double>{0.0}
+                                    : logLikelihood(model, ca_par_0,
+                                                    y[i_fr - 2], x[i_fr - 2]);
               if (ca_logL_00) {
                 auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
                 auto ca_logP_0 = current.walkers[jw][i_fr][ib + 1].logP;
@@ -1146,18 +1152,19 @@ template <class Algorithm, class Model, class Variables, class DataType,
            is_model<Model, Parameters, Variables, DataType>)
 
 auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
-                const Variables &x, const Fractioner& frac, Reporter rep,
+                const Variables &x, const Fractioner &frac, Reporter rep,
                 std::size_t num_scouts_per_ensemble, double min_fraction,
-                std::size_t thermo_jumps_every, double n_points_per_decade_beta, double n_points_per_decade_fraction,
-                double stops_at, bool includes_zero, std::size_t initseed) {
+                std::size_t thermo_jumps_every, double n_points_per_decade_beta,
+                double n_points_per_decade_fraction, double stops_at,
+                bool includes_zero, std::size_t initseed) {
 
   auto a = alg;
   auto mt = init_mt(initseed);
   auto n_walkers = num_scouts_per_ensemble;
   auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
   auto [ys, xs, beta_final] =
-      frac(y, x, mt, size(model) * min_fraction, n_points_per_decade_beta, n_points_per_decade_fraction, stops_at,
-           includes_zero);
+      frac(y, x, mt, size(model) * min_fraction, n_points_per_decade_beta,
+           n_points_per_decade_fraction, stops_at, includes_zero);
   auto beta_init =
       by_beta<double>(beta_final[0].begin(), beta_final[0].begin() + 2);
   auto current = init_cuevi_mcmc(n_walkers, beta_init, mts, model, ys, xs);
@@ -1165,7 +1172,7 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
   std::size_t iter = 0;
   report_title(rep, current);
 
-  while (size(ys) < size(current.beta) || !mcmc_run.second) {
+  while ((size(current.beta) < size(beta_final))  ||(size(current.beta.back())<size(beta_final.back()))|| !mcmc_run.second ) {
     while (!mcmc_run.second) {
       step_stretch_cuevi_mcmc(current, rep, mts, model, ys, xs);
       ++iter;
@@ -1174,7 +1181,7 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
       report(iter, rep, current);
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
     }
-    if (size(current.beta) < size(ys)) {
+    if ((size(current.beta) < size(ys))||(size(current.beta.back())<size(beta_final.back()))) {
       auto is_current =
           push_back_new_fraction(current, mts, beta_final, model, ys, xs);
       while (!(is_current)) {
@@ -1203,15 +1210,18 @@ template <class Model, class Variables, class DataType,
 auto cuevi_convergence(Model model, const DataType &y, const Variables &x,
                        std::string path, std::string filename,
                        std::size_t num_scouts_per_ensemble, double min_fraction,
-                       std::size_t thermo_jumps_every, std::size_t max_iter, double max_ratio,
-                       double n_points_per_decade_beta,double n_points_per_decade_fraction, double stops_at,
+                       std::size_t thermo_jumps_every, std::size_t max_iter,
+                       double max_ratio, double n_points_per_decade_beta,
+                       double n_points_per_decade_fraction, double stops_at,
                        bool includes_zero, std::size_t initseed) {
-  return cuevi_impl(
-      checks_derivative_var_ratio<cuevi_mcmc>(max_iter * model.size(), max_ratio), model,
-      y, x, fractioner{},
-      save_mcmc<save_likelihood, save_Parameter,save_Evidence>(path, filename, 100ul, 10000ul,100ul),
-      num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
-      n_points_per_decade_beta, n_points_per_decade_fraction,stops_at, includes_zero, initseed);
+  return cuevi_impl(checks_derivative_var_ratio<cuevi_mcmc>(
+                        max_iter * model.size(), max_ratio),
+                    model, y, x, fractioner{},
+                    save_mcmc<save_likelihood, save_Parameter, save_Evidence>(
+                        path, filename, 100ul, 10000ul, 100ul),
+                    num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
+                    n_points_per_decade_beta, n_points_per_decade_fraction,
+                    stops_at, includes_zero, initseed);
 }
 
 #endif // CUEVI_H
