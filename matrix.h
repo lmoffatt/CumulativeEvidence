@@ -323,7 +323,7 @@ public:
   }
 
   friend auto inv(const SymmetricMatrix &a) {
-    return lapack::Lapack_Symm_inv(a).LT_fill();
+    return lapack::Lapack_Symm_inv(a);
   }
 
   friend auto &tr(const SymmetricMatrix &a) { return a; }
@@ -610,6 +610,8 @@ public:
   explicit SymPosDefMatrix(std::size_t _nrows, T value)
       : base_type(_nrows, value) {}
 
+  static
+  SymPosDefMatrix I_sware_it_is_possitive(base_type &&x) {return SymPosDefMatrix(std::move(x));}
   SymPosDefMatrix(const SymPosDefMatrix &x) : base_type(x) {}
   SymPosDefMatrix(SymPosDefMatrix &&x) : base_type(std::move(x)) {}
 

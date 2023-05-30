@@ -1,6 +1,8 @@
 #ifndef PARALLEL_TEMPERING_H
 #define PARALLEL_TEMPERING_H
+#include "bayesian_linear_regression.h"
 #include "mcmc.h"
+#include "multivariate_normal_distribution.h"
 #include <algorithm>
 #include <fstream>
 
@@ -606,7 +608,11 @@ public:
         << "logLik"
         << "\n";
   }
+  template <class Model, class Variables, class DataType>
+  friend void report_model(save_likelihood &,Model &, const DataType &,
+                           const Variables &, by_beta<double> const &) {
 
+   }
   friend void report(std::size_t iter, save_likelihood &s,
                      thermo_mcmc<Parameters> const &data) {
     if (iter % s.save_every == 0)
@@ -619,6 +625,9 @@ public:
               << data.walkers[i_walker][i_beta].logL << "\n";
   }
 };
+
+
+
 
 class save_Evidence {
 
@@ -656,6 +665,21 @@ public:
       }
     }
   }
+
+  template <class Model, class Variables, class DataType>
+  friend void report_model(save_Evidence &s,Model &model, const DataType &y,
+                           const Variables &x, by_beta<double> const &beta0) {
+
+    auto expected_Evidence= bayesian_linear_regression_calculate_Evidence(model,y,x);
+
+    auto meanLik = bayesian_linear_regression_calculate_mean_logLik(model,y,x,beta0);
+    if (meanLik&& expected_Evidence)
+    for (std::size_t i_beta = 0; i_beta < size(beta0); ++i_beta)
+      s.f<< 0 << s.sep << 0 << s.sep  << beta0[i_beta]<< s.sep
+            << 0 << s.sep << meanLik.value()[i_beta] << s.sep << 0 << s.sep
+            << expected_Evidence << s.sep << expected_Evidence<< "\n";
+  }
+
 };
 
 class save_Parameter {
@@ -674,6 +698,10 @@ public:
         << "i_walker" << s.sep << "id_walker" << s.sep << "i_par" << s.sep
         << "par_value"
         << "\n";
+  }
+  template <class Model, class Variables, class DataType>
+  friend void report_model(save_Parameter &,Model &, const DataType &,
+                    const Variables &, by_beta<double> const &) {
   }
 
   friend void report(std::size_t iter, save_Parameter &s,
@@ -712,6 +740,11 @@ public:
                      thermo_mcmc<Parameters> const &data) {
     (report(iter, static_cast<saving &>(f), data), ..., 1);
   }
+  template <class Model, class Variables, class DataType>
+  friend void report_model(save_mcmc &s,Model &model, const DataType &y,
+                     const Variables &x, by_beta<double> const &beta0) {
+    (report_model(static_cast<saving &>(s), model,y,x,beta0), ..., 1);
+  }
   friend void report_title(save_mcmc &f, thermo_mcmc<Parameters> const &data) {
     (report_title(static_cast<saving &>(f), data), ..., 1);
   }
@@ -735,12 +768,14 @@ auto thermo_impl(const Algorithm &alg, Model &model, const DataType &y,
   auto n_walkers = num_scouts_per_ensemble;
   auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
   auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
+
   auto beta_run = by_beta<double>(beta.rend() - 2, beta.rend());
   auto current = init_thermo_mcmc(n_walkers, beta_run, mts, model, y, x);
   auto n_par = current.walkers[0][0].parameter.size();
   auto mcmc_run = checks_convergence(std::move(a), current);
   std::size_t iter = 0;
   report_title(rep, current);
+  report_model(rep,model,y,x, beta);
 
   while (beta_run.size() < beta.size() || !mcmc_run.second) {
     while (!mcmc_run.second) {

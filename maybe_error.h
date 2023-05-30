@@ -143,6 +143,19 @@ auto operator*(const T &x, const S &y) {
         get_error(x) + " multiplies " + get_error(y));
 }
 
+template<class T>
+Maybe_error<std::vector<T>> promote_Maybe_error(std::vector<Maybe_error<T>>const & x)
+{
+  std::vector<T> out(size(x));
+
+  for (std::size_t i=0; i<size(out); ++i)
+    if (x[i])
+      out[i]=x[i].value();
+    else return "error at "+std::to_string(i)+x[i].error();
+  return out;
+
+}
+
 template <class T, class S>
 requires(is_Maybe_error<T> || is_Maybe_error<S>)
     auto operator+(const T &x, const S &y) {

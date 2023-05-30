@@ -177,6 +177,109 @@ calculate_Evidence(by_fraction<by_beta<double>> const &beta,
   }
   return out;
 }
+template <class Cova>
+    requires Covariance<double, Cova>
+auto bayesian_linear_regression_calculate_posterior(
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+    const Matrix<double> &y0, const Matrix<double> &X0,
+    const Matrix<double> &y1, const Matrix<double> &X1) {
+    auto a_0 = prior.alpha(); ;
+  auto prior_eps_df= 2.0 *a_0;
+  auto b_0= prior.beta();
+  auto  prior_eps_variance = 2.0* b_0/prior_eps_df;
+
+  auto L_0 = prior.Gamma();
+  auto SSx = XTX(X1)-XTX(X0);
+  auto n = y1.nrows()-y0.nrows();
+  auto beta_0 = prior.mean();
+  SymPosDefMatrix<double> L_n = SymPosDefMatrix<double>::I_sware_it_is_possitive( L_0 +  SSx);
+
+  auto beta_n =
+      tr(inv(L_n) * (tr(X1) * y1 - tr(X0) * y0 + (L_0 * tr(prior.mean()))));
+
+  auto yfit1 = X1 * tr(beta_n);
+  auto ydiff1 = y1 - yfit1;
+  auto yfit0 = X0 * tr(beta_n);
+  auto ydiff0 = y0 - yfit0;
+  auto SS = xtx(ydiff1.value()) - xtx(ydiff0.value());
+
+  auto a_n = a_0 +  n / 2.0;
+  auto b_n = b_0 + 0.5 *  SS + 0.5 * xAxt(beta_0 - beta_n, L_0);
+
+  auto posterior_Normal= make_multivariate_normal_distribution_from_precision(std::move(beta_n), std::move(L_n));
+
+
+  return multivariate_gamma_normal_distribution<double, SymPosDefMatrix<double>>(
+      log_inverse_gamma_distribution(a_n,b_n.value()),
+      std::move(posterior_Normal.value()));
+}
+
+template <class Cova>
+  requires Covariance<double, Cova>
+auto bayesian_linear_regression_calculate_Evidence(
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+    const Matrix<double> &y0, const Matrix<double> &X0,
+    const Matrix<double> &y1, const Matrix<double> &X1) {
+  auto a_0 = prior.alpha();
+  ;
+  auto prior_eps_df = 2.0 * a_0;
+  auto b_0 = prior.beta();
+  auto prior_eps_variance = 2.0 * b_0 / prior_eps_df;
+
+  auto L_0 = prior.Gamma();
+
+  auto SSx = XTX(X1) + XTX(X0) * -1.0;
+  auto n = y1.nrows() - y0.nrows();
+  auto beta_0 = prior.mean();
+  auto L_n = SSx + L_0;
+  auto beta_n =
+      tr(inv(L_n) * (tr(X1) * y1 - tr(X0) * y0 + (L_0 * tr(prior.mean()))));
+
+  auto yfit1 = X1 * tr(beta_n);
+  auto ydiff1 = y1 - yfit1;
+  auto yfit0 = X0 * tr(beta_n);
+  auto ydiff0 = y0 - yfit0;
+  auto SS = xtx(ydiff1.value()) - xtx(ydiff0.value());
+  auto a_n = a_0 + n / 2.0;
+  auto b_n = b_0 + 0.5 * SS + 0.5 * xAxt(beta_0 - beta_n, L_0);
+
+  auto logE_n = -0.5 * n * std::log(2 * std::numbers::pi) +
+                0.5 * (logdet(L_0) - logdet(L_n)) + a_0 * log(b_0) -
+                a_n * log(b_n) + std::lgamma(a_n) - std::lgamma(a_0);
+  return logE_n;
+}
+
+template <class Cova>
+  requires Covariance<double, Cova>
+auto bayesian_linear_regression_calculate_mean_logLik(
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+    const Matrix<double> &y0, const Matrix<double> &X0,
+    const Matrix<double> &y1, const Matrix<double> &X1, double beta0) {
+  auto a_0 = prior.alpha();
+  auto b_0 = prior.beta();
+  auto L_0 = prior.Gamma();
+  auto SSx = XTX(X1) + XTX(X0) * -1.0;
+  auto n = y1.nrows() - y0.nrows();
+  auto beta_0 = prior.mean();
+  auto L_n = L_0 + beta0 * SSx;
+  auto beta_n = tr(inv(L_n) * (beta0 * (tr(X1) * y1 - tr(X0) * y0) +
+                               (L_0 * tr(prior.mean()))));
+  auto yfit1 = X1 * tr(beta_n);
+  auto ydiff1 = y1 - yfit1;
+  auto yfit0 = X0 * tr(beta_n);
+  auto ydiff0 = y0 - yfit0;
+  auto SS = beta0 * xtx(ydiff1.value()) - beta0 * xtx(ydiff0.value());
+
+  auto a_n = a_0 + beta0 * n / 2.0;
+  auto b_n = b_0 + 0.5 * SS + 0.5 * xAxt(beta_0 - beta_n, L_0);
+  double d_a_n = 1.0 * n / 2.0;
+  auto d_b_n = 0.5 * xtx(ydiff1.value()) - 0.5 * xtx(ydiff0.value());
+  auto mean_logLi = -0.5 * n * std::log(2 * std::numbers::pi) -
+                    0.5 * Trace(inv(L_n) * SSx) - a_n / b_n * d_b_n +
+                    (digamma(a_n) - log(b_n)) * d_a_n;
+  return mean_logLi;
+}
+
 void report(std::size_t iter, save_likelihood &s,
             cuevi_mcmc<Parameters> const &data) {
   if (iter % s.save_every == 0)
@@ -211,6 +314,70 @@ void report(std::size_t iter, save_Parameter &s,
                 << s.sep
                 << data.walkers[i_walker][i_frac][i_beta].parameter[i_par]
                 << "\n";
+}
+template <class Model, class Variables, class DataType>
+void report_model(save_Evidence &s, Model &model, const DataType &y,
+                  const Variables &x,
+                  by_fraction<by_beta<double>> const &beta0) {
+
+  by_fraction<by_beta<Maybe_error<double>>> expected_meanLik(size(beta0));
+
+
+  auto expected_Evidence =
+      bayesian_linear_regression_calculate_Evidence(model, y.back(), x.back());
+
+
+  by_fraction<Maybe_error<double>> partial_expected_evidence(size(beta0));
+  by_fraction<Maybe_error<double>> expected_partial_evidence_by_logLik(size(beta0));
+
+
+  partial_expected_evidence[0] =
+      bayesian_linear_regression_calculate_Evidence(model, y[0], x[0]);
+
+  expected_meanLik[0] = by_beta<Maybe_error<double>>(size(beta0[0]));
+
+  for (std::size_t i_beta = 0; i_beta < size(beta0[0]); ++i_beta)
+    expected_meanLik[0][i_beta] =
+        bayesian_linear_regression_calculate_mean_logLik(model, y[0], x[0],
+                                                         beta0[0][i_beta]);
+  auto model_i =
+      bayesian_linear_regression_calculate_posterior(model, y[0], x[0]);
+  auto model_f = bayesian_linear_regression_calculate_posterior(model, y.back(), x.back());
+
+
+  for (std::size_t i_frac = 1; i_frac < size(beta0); ++i_frac) {
+    partial_expected_evidence[i_frac] =
+        bayesian_linear_regression_calculate_Evidence(
+            model_i, y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac]);
+    expected_meanLik[i_frac] =
+        by_beta<Maybe_error<double>>(size(beta0[i_frac]));
+    for (std::size_t i_beta = 0; i_beta < size(beta0[i_frac]); ++i_beta)
+      expected_meanLik[i_frac][i_beta] =
+          bayesian_linear_regression_calculate_mean_logLik(
+              model_i, y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac],
+              beta0[i_frac][i_beta]);
+    model_i = bayesian_linear_regression_calculate_posterior(
+                  model_i, y[i_frac-1], x[i_frac- 1 ],y[i_frac], x[i_frac ]);
+  }
+
+  Maybe_error<double> sum_partial_Evidence=0.0;
+
+  for (std::size_t i_frac = 0; i_frac < size(beta0); ++i_frac) {
+    expected_partial_evidence_by_logLik[i_frac] =calculate_Evidence(beta0[i_frac],promote_Maybe_error(expected_meanLik[i_frac]).value());
+    sum_partial_Evidence=sum_partial_Evidence+expected_partial_evidence_by_logLik[i_frac];
+
+  }
+
+  for (std::size_t i_frac = 0; i_frac < size(beta0); ++i_frac)
+    for (std::size_t i_beta = 0; i_beta < size(beta0[i_frac]); ++i_beta)
+      if (beta0[i_frac].back() == 1) {
+        s.f << size(beta0) << s.sep << size(beta0[i_frac]) << s.sep << 0
+            << s.sep << y[i_frac].nrows() << s.sep << beta0[i_frac][i_beta]
+            << s.sep << 0 << s.sep << expected_meanLik[i_frac][i_beta] << s.sep
+            << 0 << s.sep << partial_expected_evidence[i_frac] << s.sep
+            << expected_partial_evidence_by_logLik[i_frac] << s.sep << expected_Evidence
+            << s.sep << sum_partial_Evidence << "\n";
+      }
 }
 
 void report(std::size_t iter, save_Evidence &s,
@@ -254,7 +421,7 @@ template <class Observer, class Model, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
               std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
   requires(is_model<Model, Parameters, Variables, DataType>)
-void single_step_stretch_cuevi_mcmc(
+void step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
@@ -266,28 +433,45 @@ void single_step_stretch_cuevi_mcmc(
   // candidate[ib].walkers[iw].
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
-  auto ca_logP = logPrior(model, ca_par);
-  auto ca_logL = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
 
-  if ((ca_logP) && (ca_logL)) {
-    auto dthLogL = ca_logP.value() - current.walkers[iw][i_fr][ib].logP +
-                   current.beta[0][ib] *
-                       (ca_logL.value() - current.walkers[iw][i_fr][ib].logL);
+  auto ca_logPa_ = logPrior(model, ca_par);
+  auto ca_logL_0 = i_fr > 0
+                       ? logLikelihood(model, ca_par, y[i_fr - 1], x[i_fr - 1])
+                       : Maybe_error(0.0);
+  auto ca_logL_1 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
+  if ((ca_logPa_) && (ca_logL_0) && (ca_logL_1)) {
+    auto ca_logPa=ca_logPa_.value();
+    auto ca_logP0 = ca_logPa_.value() + ca_logL_0.value();
+    auto ca_logL0 = ca_logL_1.value() - ca_logL_0.value();
+
+    auto dthLogL =
+        ca_logP0 - current.walkers[iw][i_fr][ib].logP +
+        current.beta[i_fr][ib] * (ca_logL0 - current.walkers[iw][i_fr][ib].logL);
     auto pJump = std::min(1.0, std::pow(z, n_par - 1) * std::exp(dthLogL));
-    observe_step_stretch_thermo_mcmc(
-        obs[iw][i_fr][ib], jw, z, r, current.walkers[iw][i_fr][ib].parameter,
-        current.walkers[jw][i_fr][ib].parameter,
-        current.walkers[iw][i_fr][ib].logP, ca_logP,
-        current.walkers[iw][i_fr][ib].logL, ca_logL, pJump >= r);
     if (pJump >= r) {
-      current.walkers[iw][i_fr][ib].parameter = std::move(ca_par);
-      current.walkers[iw][i_fr][ib].logPa = ca_logP.value();
-      current.walkers[iw][i_fr][ib].logP = ca_logP.value();
-      current.walkers[iw][i_fr][ib].logL = ca_logL.value();
+      if (i_fr + 1 < size(current.beta) && (current.beta[i_fr][ib] == 1.0)) {
+        auto ca_logL_2 = logLikelihood(model, ca_par, y[i_fr + 1], x[i_fr + 1]);
+        if ((ca_logL_2)) {
+          auto ca_logP1 = ca_logPa + ca_logL_1.value();
+          auto ca_logL1 = ca_logL_2.value() - ca_logL_1.value();
+          current.walkers[iw][i_fr][ib].parameter = ca_par;
+          current.walkers[iw][i_fr][ib].logPa = ca_logPa;
+          current.walkers[iw][i_fr][ib].logP = ca_logP0;
+          current.walkers[iw][i_fr][ib].logL = ca_logL0;
+          current.walkers[iw][i_fr + 1][0].parameter = ca_par;
+          current.walkers[iw][i_fr + 1][0].logPa = ca_logPa;
+          current.walkers[iw][i_fr + 1][0].logP = ca_logP1;
+          current.walkers[iw][i_fr + 1][0].logL = ca_logL1;
+        }
+      } else {
+        current.walkers[iw][i_fr][ib].parameter = ca_par;
+        current.walkers[iw][i_fr][ib].logPa = ca_logPa;
+        current.walkers[iw][i_fr][ib].logP = ca_logP0;
+        current.walkers[iw][i_fr][ib].logL = ca_logL0;
+      }
     }
   }
 }
-
 template <class Observer, class Model, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
               std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
@@ -508,39 +692,12 @@ void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = udist[i](mt[i]);
       auto jw = half ? j : j + n_walkers / 2;
-      if (size(current.beta) == 1) {
-        for (std::size_t i_fr = 0; i_fr < 1; ++i_fr) {
-          for (std::size_t ib = 0; ib < current.beta[i_fr].size(); ++ib)
-            single_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                           n_par, i, iw, jw, ib, i_fr);
-        }
-      } else {
-        for (std::size_t i_fr = 0; i_fr < 1; ++i_fr) {
-          for (std::size_t ib = 0; ib + 1 < current.beta[i_fr].size(); ++ib)
-            single_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                           n_par, i, iw, jw, ib, i_fr);
-
-          for (std::size_t ib = current.beta[i_fr].size() - 1;
-               ib < current.beta[i_fr].size(); ++ib)
-            double_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                           n_par, i, iw, jw, ib, i_fr);
-        }
-        for (std::size_t i_fr = 1; i_fr + 1 < current.beta.size(); ++i_fr) {
-          for (std::size_t ib = 1; ib + 1 < current.beta[i_fr].size(); ++ib)
-            middle_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                           n_par, i, iw, jw, ib, i_fr);
-
-          for (std::size_t ib = current.beta[i_fr].size() - 1;
-               ib < current.beta[i_fr].size(); ++ib)
-            triple_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                           n_par, i, iw, jw, ib, i_fr);
-        }
-        for (std::size_t i_fr = current.beta.size() - 1;
-             i_fr < current.beta.size(); ++i_fr) {
-          for (std::size_t ib = 1; ib < current.beta[i_fr].size(); ++ib)
-            last_step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x,
-                                         n_par, i, iw, jw, ib, i_fr);
-        }
+      step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x, n_par, i,
+                              iw, jw, 0, 0);
+      for (std::size_t i_fr = 0; i_fr < size(current.beta); ++i_fr) {
+        for (std::size_t ib = 1; ib < size(current.beta[i_fr]); ++ib)
+          step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x, n_par,
+                                  i, iw, jw, ib, i_fr);
       }
     }
 }
@@ -606,9 +763,10 @@ struct fractioner {
     x_out[n_frac - 1] = x;
     y_out[n_frac - 1] = y;
 
-    auto beta0 =
-        get_beta_list(n_points_per_decade_beta,
-                               stops_at * num_samples / (n_frac>1? size(indexes[0]):1), includes_zero);
+    auto beta0 = get_beta_list(n_points_per_decade_beta,
+                               stops_at * num_samples /
+                                   (n_frac > 1 ? size(indexes[0]) : 1),
+                               includes_zero);
     by_beta<double> betan = {0, 1};
     by_fraction<by_beta<double>> beta(n_frac, betan);
     beta[0] = std::move(beta0);
@@ -1171,8 +1329,10 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
   auto mcmc_run = checks_convergence(std::move(a), current);
   std::size_t iter = 0;
   report_title(rep, current);
-
-  while ((size(current.beta) < size(beta_final))  ||(size(current.beta.back())<size(beta_final.back()))|| !mcmc_run.second ) {
+  report_model(rep, model, ys, xs, beta_final);
+  while ((size(current.beta) < size(beta_final)) ||
+         (size(current.beta.back()) < size(beta_final.back())) ||
+         !mcmc_run.second) {
     while (!mcmc_run.second) {
       step_stretch_cuevi_mcmc(current, rep, mts, model, ys, xs);
       ++iter;
@@ -1181,7 +1341,8 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
       report(iter, rep, current);
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
     }
-    if ((size(current.beta) < size(ys))||(size(current.beta.back())<size(beta_final.back()))) {
+    if ((size(current.beta) < size(ys)) ||
+        (size(current.beta.back()) < size(beta_final.back()))) {
       auto is_current =
           push_back_new_fraction(current, mts, beta_final, model, ys, xs);
       while (!(is_current)) {

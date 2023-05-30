@@ -229,18 +229,23 @@ class log_inverse_gamma_distribution
       return out;
     else return "probability not finite:" +std::to_string(out);
   }
+
+  double expected_variance()const { return beta()/alpha();}
 };
 
 
 
 template <typename T, class Cova>
     requires Covariance<T, Cova>
-class multivariate_gamma_normal_distribution: public log_inverse_gamma_distribution, multivariate_normal_distribution<T,Cova> {
+class multivariate_gamma_normal_distribution: private log_inverse_gamma_distribution, multivariate_normal_distribution<T,Cova> {
 
 
   public:
   using m_normal=multivariate_normal_distribution<T,Cova>;
       using m_normal::mean;
+  using log_inverse_gamma_distribution::alpha;
+      using log_inverse_gamma_distribution::beta;
+
   using m_normal::chi2;
 
       std::size_t size()const { return 1+ m_normal::size();}
@@ -282,6 +287,12 @@ class multivariate_gamma_normal_distribution: public log_inverse_gamma_distribut
     else return "likelihood not finite:" +std::to_string(out);
     }}
 
+
+
+  auto& Gamma()const
+  {
+    return m_normal::cov_inv();
+  }
 
 };
 
