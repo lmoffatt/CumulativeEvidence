@@ -12,6 +12,31 @@ concept Covariance = std::convertible_to<C, DiagPosDetMatrix<T>> ||
 
 
 
+class normal_distribution {
+private:
+    std::normal_distribution<double> n_;
+ public:
+    normal_distribution(double mean, double stddev):n_{mean,stddev}{}
+    normal_distribution():n_{}{}
+    auto mean() const { return n_.mean(); }
+    std::size_t size()const {return 1ul;}
+    auto cov() const { return n_.stddev()*n_.stddev(); }
+    auto stddev() const { return n_.stddev(); }
+
+    double operator()(std::mt19937_64 &mt) {
+        return n_(mt);
+    }
+
+    Maybe_error<double> logP(double x)const
+    {
+        double out=-0.5 * (log(2*std::numbers::pi*cov()) + std::pow(x-mean(),2)/cov());
+        if (std::isfinite(out))
+            return out;
+        else return "likelihood not finite:" +std::to_string(out);
+    }
+};
+
+
 
 
 
@@ -64,14 +89,14 @@ public:
   auto &cholesky() const { return cho_; }
 
   Matrix<double> operator()(std::mt19937_64 &mt) {
-    auto z = random_matrix_normal(mt, mean().nrows(), mean().ncols());
+    auto z = sample(mt, normal_distribution(0,1),mean().nrows(), mean().ncols());
     if (mean().nrows()==1)
         return z* tr(cholesky());
     else
         return cholesky() * z;
   }
   auto operator()(std::mt19937_64 &mt, std::size_t n) {
-    return  random_matrix_normal(mt, n, mean().ncols()) * tr(cholesky());
+    return  sample(mt,normal_distribution(0.0,1.0), n, mean().ncols()) * tr(cholesky());
   }
 
   auto logDetCov() const {return logdetCov_;}
@@ -102,6 +127,7 @@ public:
   }
 };
 
+
 template <
     class Mat, class Cov,
     typename T = std::decay_t<decltype(get_value(std::declval<Mat>())(0, 0))>,
@@ -127,7 +153,7 @@ make_multivariate_normal_distribution(Mat &&mean, Cov &&cov) {
         auto logDetCov=logdet(chol.value());
         if (logDetCov)
         return multivariate_normal_distribution<T, Cova>(
-            std::move(meanbeta), std::move(cov), std::move(chol.value()),
+            std::move(meanbeta), std::move(beta_cov), std::move(chol.value()),
                 std::move(inv.value()),logDetCov.value());
         else
         return Error(logDetCov.error() + " log determinant fails");
@@ -295,6 +321,8 @@ class multivariate_gamma_normal_distribution: private log_inverse_gamma_distribu
   }
 
 };
+
+
 
 
 

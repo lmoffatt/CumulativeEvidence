@@ -46,34 +46,51 @@ auto init_mt(typename std::mt19937_64::result_type initseed) {
 
 
 
-template <class Model, class Parameters,class Variables,class DataType>
-concept is_model = requires(Model const &m_const,
-                            Model& m,
+template <class Distribution, class Parameters>
+concept is_sampler = requires(Distribution & dist) {
+    {
+        sample(std::declval<std::mt19937_64 &>(),dist)
+    } -> std::convertible_to<Parameters>;
+};
+
+
+
+
+
+
+template <class Prior, class Parameters,class Variables,class DataType>
+concept is_prior = requires(Prior const &prior,
                             const Parameters& p,
                             const Variables& var,
                             const DataType& y) {
   {
-    sample(std::declval<std::mt19937_64 &>(),m)
-  } -> std::convertible_to<Parameters>;
+    sampler(prior)
+  } -> is_sampler<Parameters>;
 
   {
-    simulate(std::declval<std::mt19937_64 &>(),m_const,p,var)
-  }-> std::convertible_to<DataType>;
-
-  {
-    logPrior(m_const,p)
+    logPrior(prior,p)
   }->std::convertible_to<Maybe_error<double>>;
 
-  {
-    logLikelihood(m_const,p,var,y)
-  }->std::convertible_to<Maybe_error<double>>;
+ };
+
+
+template <class Likelihood, class Parameters,class Variables,class DataType>
+concept is_likelihood_model = requires(Likelihood const &lik,
+                            const Parameters& p,
+                            const Variables& var,
+                            const DataType& y) {
+
+    {
+        simulate(std::declval<std::mt19937_64 &>(),lik,p,var)
+    }-> std::convertible_to<DataType>;
+
+    {
+        logLikelihood(lik,p,var,y)
+    }->std::convertible_to<Maybe_error<double>>;
 };
 
 
-template<class D>
-requires(is_Distribution<D>)
-auto sample(std::mt19937_64& mt, D&d)
-{return d(mt);}
+
 
 template<class D, class T>
 requires(is_Distribution_of<D,T>)
@@ -91,20 +108,21 @@ struct mcmc {
   double logL;
 };
 
-template <class Model, class Variables,class DataType,
+template <class Prior,class Lik, class Variables,class DataType,
          class Parameters=std::decay_t<
-             decltype(sample(std::declval<std::mt19937_64 &>(), std::declval<Model&>()))>>
-requires (is_model<Model,Parameters,Variables,DataType>)
-auto init_mcmc(std::mt19937_64 &mt, Model& m,
+             decltype(sample(std::declval<std::mt19937_64 &>(), std::declval<Prior&>()))>>
+requires (is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Lik,Parameters,Variables,DataType>)
+auto init_mcmc(std::mt19937_64 &mt, Prior const & pr, const Lik& lik,
                const DataType &y, const Variables &x) {
-  auto par = sample(mt,m);
-  auto logP = logPrior(m,par);
-  auto logL = logLikelihood(m,par, y,x);
+  auto priorsampler=sampler(pr);
+  auto par = sample(mt,priorsampler);
+  auto logP = logPrior(pr,par);
+  auto logL = logLikelihood(lik,par, y,x);
   while(!(logP)||!(logL))
   {
-    par = sample(mt,m);
-    logP = logPrior(m,par);
-    logL = logLikelihood(m,par, y,x);
+    par = sample(mt,priorsampler);
+    logP = logPrior(pr,par);
+    logL = logLikelihood(lik,par, y,x);
 
   }
   return mcmc{std::move(par), logP.value(), logL.value()};

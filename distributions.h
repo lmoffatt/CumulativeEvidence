@@ -19,6 +19,8 @@ concept is_Distribution = requires(Distribution &m, Distribution const& m_const)
 
 };
 
+
+
 template <class Distribution, class T>
 concept is_Distribution_of = requires(Distribution &m, Distribution const& m_const) {
     {
@@ -40,6 +42,12 @@ template<class T>
 concept index_accesible=requires(T a)
 {
     {a[std::size_t{}]}->std::same_as<double&>;
+};
+
+
+template <class Distribution>
+concept is_vector_sampler = requires(Distribution &m) {
+      { m(std::declval<std::mt19937_64 &>,0)}->index_accesible;
 };
 
 template<class T>
@@ -140,6 +148,34 @@ requires(!Multivariate<Dist>)
 
 }
 
+template<class D>
+    requires(is_Distribution<D>)
+auto sample(std::mt19937_64& mt, D&d)
+{return d(mt);}
+
+template<class D>
+    requires(is_Distribution<D>)
+auto sampler(const D&d)
+{return D(d);}
+
+
+template<class D>
+    requires(is_vector_sampler<D>)
+auto sample(std::mt19937_64& mt, D&d, std::size_t n)
+{
+    return d(mt,n);
+}
+
+template<class D>
+    requires(is_Distribution<D>)
+auto sample(std::mt19937_64& mt, D&&d, std::size_t nrows, std::size_t ncols)
+{
+    Matrix<double> out(nrows,ncols,false);
+    for (std::size_t i=0; i<out.size(); ++i)
+       out[i]=std::forward<D>(d)(mt);
+    return out;
+ }
+
 
 
 
@@ -164,5 +200,8 @@ public:
     explicit distributions(ds&&... d): ds{std::move(d)}...{}
     explicit distributions(ds const &... d): ds{d}...{}
 };
+
+
+
 
 #endif // DISTRIBUTIONS_H

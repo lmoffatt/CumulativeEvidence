@@ -2,6 +2,7 @@
 #define CUEVI_H
 #include "mcmc.h"
 #include "parallel_tempering.h"
+#include "parallel_tempering_linear_regression.h"
 #include "random_samplers.h"
 #include <algorithm>
 #include <cassert>
@@ -90,8 +91,7 @@ auto var_logL(cuevi_mcmc<Parameters> const &mcmc,
         out[i_frac][ibeta] +=
             std::pow(mcmc.walkers[iwalker][i_frac][ibeta].logL -
                          mean[i_frac][ibeta],
-                     2) /
-            n_walkers;
+                     2) /n_walkers;
   }
   return out;
 }
@@ -177,6 +177,45 @@ calculate_Evidence(by_fraction<by_beta<double>> const &beta,
   }
   return out;
 }
+
+template <class Cova>
+    requires Covariance<double, Cova>
+auto cuevi_posterior(conjugate,
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+                     const linear_model&,
+    const Matrix<double> &y0, const Matrix<double> &X0,
+    const Matrix<double> &y1, const Matrix<double> &X1) {
+  auto a_0 = prior.alpha(); ;
+  auto prior_eps_df= 2.0 *a_0;
+  auto b_0= prior.beta();
+  auto  prior_eps_variance = 2.0* b_0/prior_eps_df;
+
+  auto L_0 = prior.Gamma();
+  auto SSx = XTX(X1)-XTX(X0);
+  auto n = y1.nrows()-y0.nrows();
+  auto beta_0 = prior.mean();
+  SymPosDefMatrix<double> L_n = SymPosDefMatrix<double>::I_sware_it_is_possitive( L_0 +  SSx);
+
+  auto beta_n =
+      tr(inv(L_n) * (tr(X1) * y1 - tr(X0) * y0 + (L_0 * tr(prior.mean()))));
+
+  auto yfit1 = X1 * tr(beta_n);
+  auto ydiff1 = y1 - yfit1;
+  auto yfit0 = X0 * tr(beta_n);
+  auto ydiff0 = y0 - yfit0;
+  auto SS = xtx(ydiff1.value()) - xtx(ydiff0.value());
+
+  auto a_n = a_0 +  n / 2.0;
+  auto b_n = b_0 + 0.5 *  SS + 0.5 * xAxt(beta_0 - beta_n, L_0);
+
+  auto posterior_Normal= make_multivariate_normal_distribution_from_precision(std::move(beta_n), std::move(L_n));
+
+
+  return multivariate_gamma_normal_distribution<double, SymPosDefMatrix<double>>(
+      log_inverse_gamma_distribution(a_n,b_n.value()),
+      std::move(posterior_Normal.value()));
+}
+
 template <class Cova>
     requires Covariance<double, Cova>
 auto bayesian_linear_regression_calculate_posterior(
@@ -216,8 +255,9 @@ auto bayesian_linear_regression_calculate_posterior(
 
 template <class Cova>
   requires Covariance<double, Cova>
-auto bayesian_linear_regression_calculate_Evidence(
+auto cuevi_evidence(conjugate,
     const multivariate_gamma_normal_distribution<double, Cova> &prior,
+    const linear_model&,
     const Matrix<double> &y0, const Matrix<double> &X0,
     const Matrix<double> &y1, const Matrix<double> &X1) {
   auto a_0 = prior.alpha();
@@ -251,6 +291,39 @@ auto bayesian_linear_regression_calculate_Evidence(
 
 template <class Cova>
   requires Covariance<double, Cova>
+auto cuevi_mean_logLik(conjugate,
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+                       const linear_model&,
+    const Matrix<double> &y0, const Matrix<double> &X0,
+    const Matrix<double> &y1, const Matrix<double> &X1, double beta0) {
+  auto a_0 = prior.alpha();
+  auto b_0 = prior.beta();
+  auto L_0 = prior.Gamma();
+  auto SSx = XTX(X1) + XTX(X0) * -1.0;
+  auto n = y1.nrows() - y0.nrows();
+  auto beta_0 = prior.mean();
+  auto L_n = L_0 + beta0 * SSx;
+  auto beta_n = tr(inv(L_n) * (beta0 * (tr(X1) * y1 - tr(X0) * y0) +
+                               (L_0 * tr(prior.mean()))));
+  auto yfit1 = X1 * tr(beta_n);
+  auto ydiff1 = y1 - yfit1;
+  auto yfit0 = X0 * tr(beta_n);
+  auto ydiff0 = y0 - yfit0;
+  auto SS = beta0 * xtx(ydiff1.value()) - beta0 * xtx(ydiff0.value());
+
+  auto a_n = a_0 + beta0 * n / 2.0;
+  auto b_n = b_0 + 0.5 * SS + 0.5 * xAxt(beta_0 - beta_n, L_0);
+  double d_a_n = 1.0 * n / 2.0;
+  auto d_b_n = 0.5 * xtx(ydiff1.value()) - 0.5 * xtx(ydiff0.value());
+  auto mean_logLi = -0.5 * n * std::log(2 * std::numbers::pi) -
+                    0.5 * Trace(inv(L_n) * SSx) - a_n / b_n * d_b_n +
+                    (digamma(a_n) - log(b_n)) * d_a_n;
+  return mean_logLi;
+}
+
+
+template <class Cova>
+    requires Covariance<double, Cova>
 auto bayesian_linear_regression_calculate_mean_logLik(
     const multivariate_gamma_normal_distribution<double, Cova> &prior,
     const Matrix<double> &y0, const Matrix<double> &X0,
@@ -279,6 +352,7 @@ auto bayesian_linear_regression_calculate_mean_logLik(
                     (digamma(a_n) - log(b_n)) * d_a_n;
   return mean_logLi;
 }
+
 
 void report(std::size_t iter, save_likelihood &s,
             cuevi_mcmc<Parameters> const &data) {
@@ -315,49 +389,49 @@ void report(std::size_t iter, save_Parameter &s,
                 << data.walkers[i_walker][i_frac][i_beta].parameter[i_par]
                 << "\n";
 }
-template <class Model, class Variables, class DataType>
-void report_model(save_Evidence &s, Model &model, const DataType &y,
+template <class Prior, class Likelihood, class Variables, class DataType>
+void report_model(save_Evidence &s, Prior const &prior, Likelihood const& lik, const DataType &y,
                   const Variables &x,
                   by_fraction<by_beta<double>> const &beta0) {
 
   by_fraction<by_beta<Maybe_error<double>>> expected_meanLik(size(beta0));
 
 
-  auto expected_Evidence =
-      bayesian_linear_regression_calculate_Evidence(model, y.back(), x.back());
+  auto expected_Evidence = evidence(conjugate{}, prior,lik,y.back(),x.back());
+     // bayesian_linear_regression_calculate_Evidence(prior,lik, y.back(), x.back());
 
 
   by_fraction<Maybe_error<double>> partial_expected_evidence(size(beta0));
   by_fraction<Maybe_error<double>> expected_partial_evidence_by_logLik(size(beta0));
 
 
-  partial_expected_evidence[0] =
-      bayesian_linear_regression_calculate_Evidence(model, y[0], x[0]);
+  partial_expected_evidence[0] = evidence(conjugate{}, prior,lik,y[0],x[0]);
+   //   bayesian_linear_regression_calculate_Evidence(prior,lik, y[0], x[0]);
 
   expected_meanLik[0] = by_beta<Maybe_error<double>>(size(beta0[0]));
 
   for (std::size_t i_beta = 0; i_beta < size(beta0[0]); ++i_beta)
     expected_meanLik[0][i_beta] =
-        bayesian_linear_regression_calculate_mean_logLik(model, y[0], x[0],
+        mean_logLik(conjugate{},prior,lik, y[0], x[0],
                                                          beta0[0][i_beta]);
   auto model_i =
-      bayesian_linear_regression_calculate_posterior(model, y[0], x[0]);
-  auto model_f = bayesian_linear_regression_calculate_posterior(model, y.back(), x.back());
+      posterior(conjugate{},prior,lik, y[0], x[0]);
+  auto model_f = posterior(conjugate{},prior,lik, y.back(), x.back());
 
 
   for (std::size_t i_frac = 1; i_frac < size(beta0); ++i_frac) {
     partial_expected_evidence[i_frac] =
-        bayesian_linear_regression_calculate_Evidence(
-            model_i, y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac]);
+        cuevi_evidence(conjugate{},
+        model_i,linear_model{}, y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac]);
     expected_meanLik[i_frac] =
         by_beta<Maybe_error<double>>(size(beta0[i_frac]));
     for (std::size_t i_beta = 0; i_beta < size(beta0[i_frac]); ++i_beta)
       expected_meanLik[i_frac][i_beta] =
-          bayesian_linear_regression_calculate_mean_logLik(
-              model_i, y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac],
+          cuevi_mean_logLik(conjugate{},
+          model_i, linear_model{},y[i_frac - 1], x[i_frac - 1], y[i_frac], x[i_frac],
               beta0[i_frac][i_beta]);
-    model_i = bayesian_linear_regression_calculate_posterior(
-                  model_i, y[i_frac-1], x[i_frac- 1 ],y[i_frac], x[i_frac ]);
+    model_i = cuevi_posterior(conjugate{},
+                  model_i, linear_model{},y[i_frac-1], x[i_frac- 1 ],y[i_frac], x[i_frac ]);
   }
 
   Maybe_error<double> sum_partial_Evidence=0.0;
@@ -417,15 +491,16 @@ void report(std::size_t iter, save_mcmc<saving...> &f,
   (report(iter, static_cast<saving &>(f), data), ..., 1);
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
-    Model const &model, const by_fraction<DataType> &y,
+    Prior const &prior, Likelihood const& lik, const by_fraction<DataType> &y,
     const by_fraction<Variables> &x, std::size_t n_par, std::size_t i,
     std::size_t iw, std::size_t jw, std::size_t ib, std::size_t i_fr) {
   auto z = std::pow(rdist[i](mt[i]) + 1, 2) / 2.0;
@@ -434,11 +509,11 @@ void step_stretch_cuevi_mcmc(
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
 
-  auto ca_logPa_ = logPrior(model, ca_par);
+  auto ca_logPa_ = logPrior(prior, ca_par);
   auto ca_logL_0 = i_fr > 0
-                       ? logLikelihood(model, ca_par, y[i_fr - 1], x[i_fr - 1])
+                       ? logLikelihood(lik, ca_par, y[i_fr - 1], x[i_fr - 1])
                        : Maybe_error(0.0);
-  auto ca_logL_1 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
+  auto ca_logL_1 = logLikelihood(lik, ca_par, y[i_fr], x[i_fr]);
   if ((ca_logPa_) && (ca_logL_0) && (ca_logL_1)) {
     auto ca_logPa=ca_logPa_.value();
     auto ca_logP0 = ca_logPa_.value() + ca_logL_0.value();
@@ -450,7 +525,7 @@ void step_stretch_cuevi_mcmc(
     auto pJump = std::min(1.0, std::pow(z, n_par - 1) * std::exp(dthLogL));
     if (pJump >= r) {
       if (i_fr + 1 < size(current.beta) && (current.beta[i_fr][ib] == 1.0)) {
-        auto ca_logL_2 = logLikelihood(model, ca_par, y[i_fr + 1], x[i_fr + 1]);
+        auto ca_logL_2 = logLikelihood(lik, ca_par, y[i_fr + 1], x[i_fr + 1]);
         if ((ca_logL_2)) {
           auto ca_logP1 = ca_logPa + ca_logL_1.value();
           auto ca_logL1 = ca_logL_2.value() - ca_logL_1.value();
@@ -472,15 +547,15 @@ void step_stretch_cuevi_mcmc(
     }
   }
 }
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+    requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
 void double_step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
-    Model const &model, const by_fraction<DataType> &y,
+    Prior const &prior, Likelihood const& lik, const by_fraction<DataType> &y,
     const by_fraction<Variables> &x, std::size_t n_par, std::size_t i,
     std::size_t iw, std::size_t jw, std::size_t ib, std::size_t i_fr)
 
@@ -492,9 +567,9 @@ void double_step_stretch_cuevi_mcmc(
   // candidate[ib].walkers[iw].
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
-  auto ca_logP = logPrior(model, ca_par);
-  auto ca_logL0 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
-  auto ca_logL1 = logLikelihood(model, ca_par, y[i_fr + 1], x[i_fr + 1]);
+  auto ca_logP = logPrior(prior, ca_par);
+  auto ca_logL0 = logLikelihood(lik, ca_par, y[i_fr], x[i_fr]);
+  auto ca_logL1 = logLikelihood(lik, ca_par, y[i_fr + 1], x[i_fr + 1]);
 
   if ((ca_logP) && (ca_logL0) && (ca_logL1)) {
     auto dthLogL = ca_logP.value() - current.walkers[iw][i_fr][ib].logP +
@@ -521,15 +596,16 @@ void double_step_stretch_cuevi_mcmc(
   }
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void middle_step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
-    Model const &model, const by_fraction<DataType> &y,
+    Prior const &prior, Likelihood const& lik, const by_fraction<DataType> &y,
     const by_fraction<Variables> &x, std::size_t n_par, std::size_t i,
     std::size_t iw, std::size_t jw, std::size_t ib, std::size_t i_fr)
 
@@ -541,9 +617,9 @@ void middle_step_stretch_cuevi_mcmc(
   // candidate[ib].walkers[iw].
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
-  auto ca_logP = logPrior(model, ca_par);
-  auto ca_logL0 = logLikelihood(model, ca_par, y[i_fr - 1], x[i_fr - 1]);
-  auto ca_logL1 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
+  auto ca_logP = logPrior(prior, ca_par);
+  auto ca_logL0 = logLikelihood(lik, ca_par, y[i_fr - 1], x[i_fr - 1]);
+  auto ca_logL1 = logLikelihood(lik, ca_par, y[i_fr], x[i_fr]);
 
   if ((ca_logP) && (ca_logL0) && (ca_logL1)) {
     auto dthLogL =
@@ -566,15 +642,16 @@ void middle_step_stretch_cuevi_mcmc(
   }
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void triple_step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
-    Model const &model, const by_fraction<DataType> &y,
+    Prior const &prior, Likelihood const& lik, const by_fraction<DataType> &y,
     const by_fraction<Variables> &x, std::size_t n_par, std::size_t i,
     std::size_t iw, std::size_t jw, std::size_t ib, std::size_t i_fr) {
 
@@ -584,10 +661,10 @@ void triple_step_stretch_cuevi_mcmc(
   // candidate[ib].walkers[iw].
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
-  auto ca_logP = logPrior(model, ca_par);
-  auto ca_logL0 = logLikelihood(model, ca_par, y[i_fr - 1], x[i_fr - 1]);
-  auto ca_logL1 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
-  auto ca_logL2 = logLikelihood(model, ca_par, y[i_fr + 1], x[i_fr + 1]);
+  auto ca_logP = logPrior(prior, ca_par);
+  auto ca_logL0 = logLikelihood(lik, ca_par, y[i_fr - 1], x[i_fr - 1]);
+  auto ca_logL1 = logLikelihood(lik, ca_par, y[i_fr], x[i_fr]);
+  auto ca_logL2 = logLikelihood(lik, ca_par, y[i_fr + 1], x[i_fr + 1]);
 
   if ((ca_logP) && (ca_logL0) && (ca_logL1) && (ca_logL2)) {
     auto dthLogL =
@@ -616,15 +693,16 @@ void triple_step_stretch_cuevi_mcmc(
   }
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void last_step_stretch_cuevi_mcmc(
     cuevi_mcmc<Parameters> &current, Observer &obs,
     ensemble<std::mt19937_64> &mt,
     std::vector<std::uniform_real_distribution<double>> &rdist,
-    Model const &model, const by_fraction<DataType> &y,
+    Prior const &prior, Likelihood const& lik, const by_fraction<DataType> &y,
     const by_fraction<Variables> &x, std::size_t n_par, std::size_t i,
     std::size_t iw, std::size_t jw, std::size_t ib, std::size_t i_fr) {
 
@@ -633,9 +711,9 @@ void last_step_stretch_cuevi_mcmc(
 
   auto ca_par = stretch_move(current.walkers[iw][i_fr][ib].parameter,
                              current.walkers[jw][i_fr][ib].parameter, z);
-  auto ca_logP = logPrior(model, ca_par);
-  auto ca_logL0 = logLikelihood(model, ca_par, y[i_fr - 1], x[i_fr - 1]);
-  auto ca_logL1 = logLikelihood(model, ca_par, y[i_fr], x[i_fr]);
+  auto ca_logP = logPrior(prior, ca_par);
+  auto ca_logL0 = logLikelihood(lik, ca_par, y[i_fr - 1], x[i_fr - 1]);
+  auto ca_logL1 = logLikelihood(lik, ca_par, y[i_fr], x[i_fr]);
 
   if ((ca_logP) && (ca_logL0) && (ca_logL1)) {
     auto dthLogL =
@@ -658,12 +736,13 @@ void last_step_stretch_cuevi_mcmc(
   }
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
-                             ensemble<std::mt19937_64> &mt, Model const &model,
+                             ensemble<std::mt19937_64> &mt, Prior const &prior, Likelihood const& lik,
                              const by_fraction<DataType> &y,
                              const by_fraction<Variables> &x,
                              double alpha_stretch = 2) {
@@ -692,11 +771,11 @@ void step_stretch_cuevi_mcmc(cuevi_mcmc<Parameters> &current, Observer &obs,
       auto iw = half ? i + n_walkers / 2 : i;
       auto j = udist[i](mt[i]);
       auto jw = half ? j : j + n_walkers / 2;
-      step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x, n_par, i,
+      step_stretch_cuevi_mcmc(current, obs, mt, rdist, prior, lik, y, x, n_par, i,
                               iw, jw, 0, 0);
       for (std::size_t i_fr = 0; i_fr < size(current.beta); ++i_fr) {
         for (std::size_t ib = 1; ib < size(current.beta[i_fr]); ++ib)
-          step_stretch_cuevi_mcmc(current, obs, mt, rdist, model, y, x, n_par,
+          step_stretch_cuevi_mcmc(current, obs, mt, rdist, prior, lik, y, x, n_par,
                                   i, iw, jw, ib, i_fr);
       }
     }
@@ -775,30 +854,33 @@ struct fractioner {
   }
 };
 
-template <class Model, class Variables, class DataType,
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
-auto init_mcmc2(std::mt19937_64 &mt, Model &m, const by_fraction<DataType> &y,
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
+auto init_mcmc2(std::mt19937_64 &mt,const  Prior &prior,  const Likelihood& lik,const by_fraction<DataType> &y,
                 const by_fraction<Variables> &x) {
-  auto par = sample(mt, m);
-  auto logP = logPrior(m, par);
-  auto logL = logLikelihood(m, par, y[0], x[0]);
+  auto prior_sampler=sampler(prior);
+  auto par = sample(mt, prior_sampler);
+  auto logP = logPrior(prior, par);
+  auto logL = logLikelihood(lik, par, y[0], x[0]);
   auto logPa = logP;
   while (!(logP) || !(logL)) {
-    par = sample(mt, m);
-    logP = logPrior(m, par);
-    logL = logLikelihood(m, par, y[0], x[0]);
+    par = sample(mt, prior_sampler);
+    logP = logPrior(prior, par);
+    logL = logLikelihood(lik, par, y[0], x[0]);
   }
   return mcmc2{mcmc{std::move(par), logP.value(), logL.value()}, logPa.value()};
 }
 
-template <class Model, class Variables, class DataType,
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 auto init_cuevi_mcmc(std::size_t n_walkers, by_beta<double> const &beta,
-                     ensemble<std::mt19937_64> &mt, Model &model,
+                     ensemble<std::mt19937_64> &mt, Prior const &prior, Likelihood const& lik,
                      const by_fraction<DataType> &y,
                      const by_fraction<Variables> &x) {
   by_fraction<std::size_t> nsamples_out(1, size(y[0]));
@@ -816,7 +898,7 @@ auto init_cuevi_mcmc(std::size_t n_walkers, by_beta<double> const &beta,
       auto iw = iiw + half * n_walkers / 2;
       for (std::size_t i = 0; i < beta.size(); ++i) {
         i_walker[iw][0][i] = iw + i * n_walkers;
-        walker[iw][0][i] = init_mcmc2(mt[iiw], model, y, x);
+        walker[iw][0][i] = init_mcmc2(mt[iiw], prior, lik, y, x);
       }
     }
   return cuevi_mcmc<Parameters>{nsamples_out, beta_out, walker, i_walker};
@@ -830,13 +912,14 @@ std::size_t last_walker(const cuevi_mcmc<Parameters> &c) {
   return tot * size(c.walkers);
 }
 
-template <class Model, class Variables, class DataType,
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
     const cuevi_mcmc<Parameters> &current_old, ensemble<std::mt19937_64> &mts,
-    const by_fraction<by_beta<double>> &final_beta, Model &model,
+    const by_fraction<by_beta<double>> &final_beta, Prior const &prior, Likelihood const& lik,
     const by_fraction<DataType> &y, const by_fraction<Variables> &x) {
   auto current = current_old;
   auto n_walkers = current.walkers.size();
@@ -848,7 +931,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
   for (std::size_t half = 0; half < 2; ++half)
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = i + half * n_walkers / 2;
-      new_walkers[iw] = init_mcmc2(mts[i], model, y, x);
+      new_walkers[iw] = init_mcmc2(mts[i], prior, lik, y, x);
       new_i_walkers[iw] = sum_walkers + iw;
     }
 
@@ -884,7 +967,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
             auto ca_logPa = ca_wa.logPa;
             auto ca_par = ca_wa.parameter;
             auto ca_logP = ca_wa.logP + ca_wa.logL;
-            auto ca_logL1 = logLikelihood(model, ca_par, y[i_frac], x[i_frac]);
+            auto ca_logL1 = logLikelihood(lik, ca_par, y[i_frac], x[i_frac]);
             if (!(ca_logL1))
               return ca_logL1.error() + " push back new fraction at walker " +
                      std::to_string(iw) + "of fraction " +
@@ -930,7 +1013,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
           auto ca_logPa0 = ca_wa0.logPa;
           auto ca_par0 = ca_wa0.parameter;
           auto ca_logP0 = ca_wa0.logP + ca_wa0.logL;
-          auto ca_logL10 = logLikelihood(model, ca_par0, y[i_frac_old + 1],
+          auto ca_logL10 = logLikelihood(lik, ca_par0, y[i_frac_old + 1],
                                          x[i_frac_old + 1]);
           if (!(ca_logL10))
             return ca_logL10.error() + " push back new fraction at walker " +
@@ -946,7 +1029,7 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
           auto ca_logPa1 = ca_wa1.logPa;
           auto ca_par1 = ca_wa1.parameter;
           auto ca_logP1 = ca_wa1.logP + ca_wa1.logL;
-          auto ca_logL11 = logLikelihood(model, ca_par1, y[i_frac_old + 1],
+          auto ca_logL11 = logLikelihood(lik, ca_par1, y[i_frac_old + 1],
                                          x[i_frac_old + 1]);
           if (!(ca_logL11)) {
             return ca_logL11.error() + " push back new fraction at walker " +
@@ -967,13 +1050,14 @@ Maybe_error<cuevi_mcmc<Parameters>> push_back_new_fraction(
   }
 }
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
 void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                             Observer &obs, std::mt19937_64 &mt,
-                            ensemble<std::mt19937_64> &mts, Model const &model,
+                            ensemble<std::mt19937_64> &mts, Prior const &prior, Likelihood const& lik,
                             const by_fraction<DataType> &y,
                             const by_fraction<Variables> &x,
                             std::size_t thermo_jumps_every) {
@@ -1064,7 +1148,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
             if (pJump > r) {
               auto ca_par = current.walkers[iw][i_fr][ib].parameter;
               auto ca_logL1 =
-                  logLikelihood(model, ca_par, y[i_fr + 1], x[i_fr + 1]);
+                  logLikelihood(lik, ca_par, y[i_fr + 1], x[i_fr + 1]);
               if (ca_logL1) {
                 auto ca_logPa = current.walkers[iw][i_fr][ib].logPa;
                 auto ca_logP = current.walkers[iw][i_fr][ib].logP;
@@ -1104,11 +1188,11 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
               if (pJump > r) {
                 auto ca_par_1 = current.walkers[iw][i_fr][ib].parameter;
                 auto ca_logL_11 =
-                    logLikelihood(model, ca_par_1, y[i_fr + 1], x[i_fr + 1]);
+                    logLikelihood(lik, ca_par_1, y[i_fr + 1], x[i_fr + 1]);
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
                 auto ca_logL_00 = i_fr == 1
                                       ? Maybe_error<double>{0.0}
-                                      : logLikelihood(model, ca_par_0,
+                                      : logLikelihood(lik, ca_par_0,
                                                       y[i_fr - 2], x[i_fr - 2]);
                 if ((ca_logL_11) && (ca_logL_00)) {
                   auto ca_logPa_1 = current.walkers[iw][i_fr][ib].logPa;
@@ -1157,7 +1241,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
                 auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
                 auto ca_logL_00 = i_fr == 1
                                       ? Maybe_error<double>{0.0}
-                                      : logLikelihood(model, ca_par_0,
+                                      : logLikelihood(lik, ca_par_0,
                                                       y[i_fr - 2], x[i_fr - 2]);
                 if (ca_logL_00) {
                   auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
@@ -1223,7 +1307,7 @@ void thermo_cuevi_jump_mcmc(std::size_t iter, cuevi_mcmc<Parameters> &current,
               auto ca_par_0 = current.walkers[jw][i_fr][ib + 1].parameter;
               auto ca_logL_00 = i_fr == 1
                                     ? Maybe_error<double>{0.0}
-                                    : logLikelihood(model, ca_par_0,
+                                    : logLikelihood(lik, ca_par_0,
                                                     y[i_fr - 2], x[i_fr - 2]);
               if (ca_logL_00) {
                 auto ca_logPa_0 = current.walkers[jw][i_fr][ib + 1].logPa;
@@ -1302,14 +1386,14 @@ bool compare_to_max_ratio(by_fraction<by_beta<double>> const &beta,
   return true;
 }
 
-template <class Algorithm, class Model, class Variables, class DataType,
+template <class Algorithm, class Prior, class Likelihood, class Variables, class DataType,
           class Fractioner, class Reporter,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
   requires(is_Algorithm_conditions<Algorithm, cuevi_mcmc> &&
-           is_model<Model, Parameters, Variables, DataType>)
+          is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
 
-auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
+auto cuevi_impl(const Algorithm &alg, Prior const &prior, Likelihood const& lik, const DataType &y,
                 const Variables &x, const Fractioner &frac, Reporter rep,
                 std::size_t num_scouts_per_ensemble, double min_fraction,
                 std::size_t thermo_jumps_every, double n_points_per_decade_beta,
@@ -1321,22 +1405,22 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
   auto n_walkers = num_scouts_per_ensemble;
   auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
   auto [ys, xs, beta_final] =
-      frac(y, x, mt, size(model) * min_fraction, n_points_per_decade_beta,
+      frac(y, x, mt, size(prior) * min_fraction, n_points_per_decade_beta,
            n_points_per_decade_fraction, stops_at, includes_zero);
   auto beta_init =
       by_beta<double>(beta_final[0].begin(), beta_final[0].begin() + 2);
-  auto current = init_cuevi_mcmc(n_walkers, beta_init, mts, model, ys, xs);
+  auto current = init_cuevi_mcmc(n_walkers, beta_init, mts, prior,lik, ys, xs);
   auto mcmc_run = checks_convergence(std::move(a), current);
   std::size_t iter = 0;
   report_title(rep, current);
-  report_model(rep, model, ys, xs, beta_final);
+  report_model(rep, prior,lik, ys, xs, beta_final);
   while ((size(current.beta) < size(beta_final)) ||
          (size(current.beta.back()) < size(beta_final.back())) ||
          !mcmc_run.second) {
     while (!mcmc_run.second) {
-      step_stretch_cuevi_mcmc(current, rep, mts, model, ys, xs);
+      step_stretch_cuevi_mcmc(current, rep, mts, prior,lik, ys, xs);
       ++iter;
-      thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, model, ys, xs,
+      thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, prior,lik, ys, xs,
                              thermo_jumps_every);
       report(iter, rep, current);
       mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
@@ -1344,15 +1428,15 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
     if ((size(current.beta) < size(ys)) ||
         (size(current.beta.back()) < size(beta_final.back()))) {
       auto is_current =
-          push_back_new_fraction(current, mts, beta_final, model, ys, xs);
+          push_back_new_fraction(current, mts, beta_final, prior,lik, ys, xs);
       while (!(is_current)) {
-        step_stretch_cuevi_mcmc(current, rep, mts, model, ys, xs);
+        step_stretch_cuevi_mcmc(current, rep, mts, prior,lik, ys, xs);
         ++iter;
-        thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, model, ys, xs,
+        thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, prior,lik, ys, xs,
                                thermo_jumps_every);
         report(iter, rep, current);
         is_current =
-            push_back_new_fraction(current, mts, beta_final, model, ys, xs);
+            push_back_new_fraction(current, mts, beta_final, prior,lik, ys, xs);
       }
       current = std::move(is_current.value());
       std::cerr << "\n  nsamples=" << current.nsamples.back()
@@ -1364,11 +1448,115 @@ auto cuevi_impl(const Algorithm &alg, Model &model, const DataType &y,
   return std::pair(mcmc_run, current);
 }
 
-template <class Model, class Variables, class DataType,
+
+
+template <class Algorithm,  class Fractioner, class Reporter>
+    requires(is_Algorithm_conditions<Algorithm, cuevi_mcmc> )
+class cuevi_integration{
+  Algorithm alg_;
+  Fractioner frac_;
+  Reporter rep_;
+  std::size_t num_scouts_per_ensemble_;
+  double min_fraction_;
+  std::size_t thermo_jumps_every_;
+  double n_points_per_decade_beta_;
+  double n_points_per_decade_fraction_;
+  double stops_at_;
+  bool includes_zero_; std::size_t initseed_;
+
+  public:
+
+cuevi_integration(Algorithm &&alg, Fractioner &&frac, Reporter&& rep,
+                std::size_t num_scouts_per_ensemble, double min_fraction,
+                std::size_t thermo_jumps_every, double n_points_per_decade_beta,
+                double n_points_per_decade_fraction, double stops_at,
+                          bool includes_zero, std::size_t initseed):
+      alg_{std::move(alg)},frac_{std::move(frac)},rep_{std::move(rep)},num_scouts_per_ensemble_{num_scouts_per_ensemble},min_fraction_{min_fraction},thermo_jumps_every_{thermo_jumps_every},
+      n_points_per_decade_beta_{n_points_per_decade_beta},n_points_per_decade_fraction_{n_points_per_decade_fraction},stops_at_{stops_at},includes_zero_{includes_zero},initseed_{initseed}{}
+
+auto& algorithm()const {return alg_;}
+auto& fractioner()const {return frac_;}
+auto& reporter()  {return rep_;}
+auto& min_fraction()const {return min_fraction_;}
+auto& num_scouts_per_ensemble()const {return num_scouts_per_ensemble_;}
+auto& thermo_jumps_every()const {return thermo_jumps_every_;}
+auto& n_points_per_decade_beta()const {return n_points_per_decade_beta_;}
+auto& n_points_per_decade_fraction()const {return n_points_per_decade_fraction_;}
+auto& stops_at()const {return stops_at_;}
+auto& includes_zero()const {return includes_zero_;}
+auto& initseed()const {return initseed_;}
+};
+
+
+
+template <class Algorithm, class Prior, class Likelihood, class Variables, class DataType,
+         class Fractioner, class Reporter,
+         class Parameters = std::decay_t<decltype(sample(
+             std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+    requires(is_Algorithm_conditions<Algorithm, cuevi_mcmc> &&
+             is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
+auto evidence( cuevi_integration<Algorithm, Fractioner,Reporter> &&cue, Prior const &prior, Likelihood const& lik, const DataType &y,
+                const Variables &x) {
+
+auto a = cue.algorithm();
+auto mt = init_mt(cue.initseed());
+auto n_walkers = cue.num_scouts_per_ensemble();
+auto mts = init_mts(mt, cue.num_scouts_per_ensemble() / 2);
+auto [ys, xs, beta_final] =
+    cue.fractioner()(y, x, mt, size(prior) * cue.min_fraction(), cue.n_points_per_decade_beta(),
+                                 cue.n_points_per_decade_fraction(), cue.stops_at(), cue.includes_zero());
+auto beta_init =
+    by_beta<double>(beta_final[0].begin(), beta_final[0].begin() + 2);
+auto current = init_cuevi_mcmc(n_walkers, beta_init, mts, prior,lik, ys, xs);
+auto mcmc_run = checks_convergence(std::move(a), current);
+std::size_t iter = 0;
+auto& rep=cue.reporter();
+report_title(rep, current);
+report_model(rep, prior,lik, ys, xs, beta_final);
+while ((size(current.beta) < size(beta_final)) ||
+       (size(current.beta.back()) < size(beta_final.back())) ||
+       !mcmc_run.second) {
+    while (!mcmc_run.second) {
+      step_stretch_cuevi_mcmc(current, rep, mts, prior,lik, ys, xs);
+      ++iter;
+      thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, prior,lik, ys, xs,
+                             cue.thermo_jumps_every());
+      report(iter, rep, current);
+      mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
+    }
+    if ((size(current.beta) < size(ys)) ||
+        (size(current.beta.back()) < size(beta_final.back()))) {
+      auto is_current =
+          push_back_new_fraction(current, mts, beta_final, prior,lik, ys, xs);
+      while (!(is_current)) {
+        step_stretch_cuevi_mcmc(current, rep, mts, prior,lik, ys, xs);
+        ++iter;
+        thermo_cuevi_jump_mcmc(iter, current, rep, mt, mts, prior,lik, ys, xs,
+                               cue.thermo_jumps_every());
+        report(iter, rep, current);
+        is_current =
+            push_back_new_fraction(current, mts, beta_final, prior,lik, ys, xs);
+      }
+      current = std::move(is_current.value());
+      std::cerr << "\n  nsamples=" << current.nsamples.back()
+                << "   beta_run=" << current.beta.back().back() << "\n";
+      mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
+    }
+}
+
+return std::pair(mcmc_run, current);
+}
+
+
+
+
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
-auto cuevi_convergence(Model model, const DataType &y, const Variables &x,
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+      requires(is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
+
+auto cuevi_convergence(const Prior& prior, const Likelihood& lik, const DataType &y, const Variables &x,
                        std::string path, std::string filename,
                        std::size_t num_scouts_per_ensemble, double min_fraction,
                        std::size_t thermo_jumps_every, std::size_t max_iter,
@@ -1376,13 +1564,36 @@ auto cuevi_convergence(Model model, const DataType &y, const Variables &x,
                        double n_points_per_decade_fraction, double stops_at,
                        bool includes_zero, std::size_t initseed) {
   return cuevi_impl(checks_derivative_var_ratio<cuevi_mcmc>(
-                        max_iter * model.size(), max_ratio),
-                    model, y, x, fractioner{},
+                        max_iter * prior.size(), max_ratio),
+                    prior, lik, y, x, fractioner{},
                     save_mcmc<save_likelihood, save_Parameter, save_Evidence>(
                         path, filename, 100ul, 10000ul, 100ul),
                     num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
                     n_points_per_decade_beta, n_points_per_decade_fraction,
                     stops_at, includes_zero, initseed);
 }
+
+
+
+auto cuevi_by_convergence(std::string path, std::string filename,
+                       std::size_t num_scouts_per_ensemble, double min_fraction,
+                       std::size_t thermo_jumps_every, std::size_t max_iter,
+                       double max_ratio, double n_points_per_decade_beta,
+                       double n_points_per_decade_fraction, double stops_at,
+                       bool includes_zero, std::size_t initseed) {
+  return cuevi_integration(checks_derivative_var_ratio<cuevi_mcmc>(
+                        max_iter , max_ratio), fractioner{},
+                    save_mcmc<save_likelihood, save_Parameter, save_Evidence>(
+                        path, filename, 100ul, 10000ul, 100ul),
+                    num_scouts_per_ensemble, min_fraction, thermo_jumps_every,
+                    n_points_per_decade_beta, n_points_per_decade_fraction,
+                    stops_at, includes_zero, initseed);
+}
+
+
+
+
+
+
 
 #endif // CUEVI_H

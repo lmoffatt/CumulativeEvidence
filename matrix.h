@@ -128,6 +128,7 @@ public:
         nrows_ = x.nrows();
         ncols_ = x.ncols();
         std::swap(x_ , x.x_);
+
       }
     return *this;
   }
@@ -266,6 +267,7 @@ template <class T> class SymmetricMatrix : public Matrix<T> {
 
 protected:
   explicit SymmetricMatrix(base_type &&x) : base_type{std::move(x)} {}
+  explicit SymmetricMatrix(base_type const &x) : base_type{x} {}
 
 public:
   operator Matrix<T> const &() { return static_cast<Matrix<T> const &>(*this); }
@@ -280,6 +282,10 @@ public:
 
   SymmetricMatrix &operator=(const SymmetricMatrix &x) {
     static_cast<base_type &>(*this) = static_cast<base_type const &>(x);
+    return *this;
+  }
+  SymmetricMatrix &operator=(SymmetricMatrix &&x) {
+    static_cast<base_type &>(*this) = std::move(static_cast<base_type &>(x));
     return *this;
   }
 
@@ -613,7 +619,7 @@ public:
   static
   SymPosDefMatrix I_sware_it_is_possitive(base_type &&x) {return SymPosDefMatrix(std::move(x));}
   SymPosDefMatrix(const SymPosDefMatrix &x) : base_type(x) {}
-  SymPosDefMatrix(SymPosDefMatrix &&x) : base_type(std::move(x)) {}
+  SymPosDefMatrix(SymPosDefMatrix &&x) : base_type(std::move(static_cast<base_type&>(x))) {}
 
   SymPosDefMatrix &operator=(const SymPosDefMatrix &x) {
     base_type::operator=(static_cast<base_type const &>(x));

@@ -2,8 +2,14 @@
 #define MATRIX_RANDOM_H
 
 #include "matrix.h"
+#include "mcmc.h"
+#include "multivariate_normal_distribution.h"
 #include <iostream>
 #include <random>
+
+
+
+
 
 template<class distribution>
 auto random_matrix(std::mt19937_64& mt,distribution&& d,std::size_t nrows,std::size_t ncols)
@@ -38,7 +44,7 @@ auto random_matrix_exponential(std::mt19937_64& mt,std::size_t nrows,std::size_t
 
 auto random_covariance(std::mt19937_64& mt, std::size_t ndim, const Matrix<double>& sigmas )
 {
-    auto X=random_matrix_normal(mt,ndim,ndim);
+    auto X=sample(mt,normal_distribution{0,1},ndim,ndim);
     auto [Q,R]=qr(X);
     auto s=DiagPosDetMatrix(sigmas);
     auto cov=AT_D_A(Q,s);

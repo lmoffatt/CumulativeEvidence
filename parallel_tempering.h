@@ -1,10 +1,13 @@
 #ifndef PARALLEL_TEMPERING_H
 #define PARALLEL_TEMPERING_H
-#include "bayesian_linear_regression.h"
+// #include "bayesian_linear_regression.h"
+//#include "bayesian_linear_regression.h"
 #include "mcmc.h"
 #include "multivariate_normal_distribution.h"
 #include <algorithm>
 #include <fstream>
+
+
 
 struct observer {
   observer() {}
@@ -184,7 +187,7 @@ double calcEvidence(double b1, double b2, double L1, double L2) {
 }
 double calcEvidence_(double b1, double b2, double L1, double L2) {
   if (b1 == 0)
-    return calcEvidence_(b1, b2, L1, L2);
+    return calcEvidence(b1, b2, L1, L2);
   auto db = b2 - b1;
   auto dL = L2 - L1;
 
@@ -237,8 +240,8 @@ double calculate_Evidence(by_beta<double> const &beta,
   } else {
     double sum = calcEvidence(beta[0], meanLik[0], varLik[0]);
     for (std::size_t i = 1; i < beta.size(); ++i)
-      sum += calcEvidence(beta[i-1], beta[i], meanLik[i-1], meanLik[i],
-                          varLik[i-1], varLik[i]);
+      sum += calcEvidence(beta[i - 1], beta[i], meanLik[i - 1], meanLik[i],
+                          varLik[i - 1], varLik[i]);
     return sum;
   }
 }
@@ -288,12 +291,12 @@ auto mixing_var_ratio(by_beta<double> const &mean_var,
   return out;
 }
 
-template <class Model, class Variables, class DataType,
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+    requires (is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
 auto init_thermo_mcmc(std::size_t n_walkers, by_beta<double> const &beta,
-                      ensemble<std::mt19937_64> &mt, Model &model,
+                      ensemble<std::mt19937_64> &mt, Prior const &prior, Likelihood const& lik,
                       const DataType &y, const Variables &x) {
 
   ensemble<by_beta<std::size_t>> i_walker(n_walkers,
@@ -307,7 +310,7 @@ auto init_thermo_mcmc(std::size_t n_walkers, by_beta<double> const &beta,
       auto iw = iiw + half * n_walkers / 2;
       for (std::size_t i = 0; i < beta.size(); ++i) {
         i_walker[iw][i] = iw + i * n_walkers;
-        walker[iw][i] = init_mcmc(mt[iiw], model, y, x);
+        walker[iw][i] = init_mcmc(mt[iiw], prior,lik, y, x);
       }
     }
   return thermo_mcmc{beta, walker, i_walker};
@@ -452,14 +455,14 @@ void observe_thermo_jump_mcmc(Observer &obs, std::size_t jlanding,
                               double calogL, double deltabeta, double logA,
                               double pJump, double r, bool doesChange) {}
 
-template <class Observer, class Model, class Variables, class DataType,
+template <class Observer, class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+    requires (is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
 void step_stretch_thermo_mcmc(std::size_t &iter,
                               thermo_mcmc<Parameters> &current, Observer &obs,
                               const by_beta<double> &beta,
-                              ensemble<std::mt19937_64> &mt, Model const &model,
+                              ensemble<std::mt19937_64> &mt, Prior const &prior, Likelihood const& lik,
                               const DataType &y, const Variables &x,
                               double alpha_stretch = 2) {
   assert(beta.size() == num_betas(current));
@@ -496,8 +499,8 @@ void step_stretch_thermo_mcmc(std::size_t &iter,
         // candidate[ib].walkers[iw].
         auto ca_par = stretch_move(current.walkers[iw][ib].parameter,
                                    current.walkers[jw][ib].parameter, z);
-        auto ca_logP = logPrior(model, ca_par);
-        auto ca_logL = logLikelihood(model, ca_par, y, x);
+        auto ca_logP = logPrior(prior, ca_par);
+        auto ca_logL = logLikelihood(lik, ca_par, y, x);
 
         if ((ca_logP) && (ca_logL)) {
           auto dthLogL =
@@ -569,20 +572,20 @@ void thermo_jump_mcmc(std::size_t iter, thermo_mcmc<Parameters> &current,
   }
 }
 
-template <class Model, class Variables, class DataType,
+template <class Prior, class Likelihood, class Variables, class DataType,
           class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
+              std::declval<std::mt19937_64 &>(), std::declval<Prior &>()))>>
+    requires (is_prior<Prior,Parameters,Variables,DataType>&& is_likelihood_model<Likelihood,Parameters,Variables,DataType>)
 auto push_back_new_beta(std::size_t &iter, thermo_mcmc<Parameters> &current,
                         ensemble<std::mt19937_64> &mts,
-                        by_beta<double> const &new_beta, Model &model,
+                        by_beta<double> const &new_beta, Prior const &prior, Likelihood const& lik,
                         const DataType &y, const Variables &x) {
   auto n_walkers = current.walkers.size();
   auto n_beta_old = current.walkers[0].size();
   for (std::size_t half = 0; half < 2; ++half)
     for (std::size_t i = 0; i < n_walkers / 2; ++i) {
       auto iw = i + half * n_walkers / 2;
-      current.walkers[iw].push_back(init_mcmc(mts[i], model, y, x));
+      current.walkers[iw].push_back(init_mcmc(mts[i], prior,lik, y, x));
       current.i_walkers[iw].push_back(n_beta_old * n_walkers + iw);
     }
   iter = 0;
@@ -608,11 +611,9 @@ public:
         << "logLik"
         << "\n";
   }
-  template <class Model, class Variables, class DataType>
-  friend void report_model(save_likelihood &,Model &, const DataType &,
-                           const Variables &, by_beta<double> const &) {
-
-   }
+  template <class Prior, class Likelihood, class Variables, class DataType>
+  friend void report_model(save_likelihood &,const Prior &, const Likelihood&,  const DataType &,
+                           const Variables &, by_beta<double> const &) {}
   friend void report(std::size_t iter, save_likelihood &s,
                      thermo_mcmc<Parameters> const &data) {
     if (iter % s.save_every == 0)
@@ -625,62 +626,25 @@ public:
               << data.walkers[i_walker][i_beta].logL << "\n";
   }
 };
+template <class Cova>
+    requires Covariance<double, Cova>
+Maybe_error<by_beta<double>>  bayesian_linear_regression_calculate_mean_logLik(
+    const multivariate_gamma_normal_distribution<double, Cova> &prior,
+    const Matrix<double> &y,
+    const Matrix<double> &X, by_beta<double> const& beta0) {
 
-
-
-
-class save_Evidence {
-
-public:
-  std::string sep = ",";
-  std::ofstream f;
-  std::size_t save_every = 1;
-  save_Evidence(std::string const &path, std::size_t interval)
-      : f{std::ofstream(path + "__i_iter.csv")}, save_every{interval} {}
-
-  friend void report_title(save_Evidence &s, thermo_mcmc<Parameters> const &) {
-
-    s.f << "n_betas" << s.sep << "iter" << s.sep << "beta" << s.sep
-        << "meanPrior" << s.sep << "meanLik" << s.sep << "varLik" << s.sep
-        << "Evidence_mean" << s.sep << "Evidence_var"
-        << "\n";
+  by_beta<double> out(size(beta0));
+  for (std::size_t i=0; i<size(out); ++i)
+  {
+    auto meanLogLiki=bayesian_linear_regression_calculate_mean_logLik(prior,y,X,beta0[i]);
+    if (!meanLogLiki)
+      return "bayesian_linear_regression_calculate_mean_logLik error for beta =" +std::to_string(beta0[i])+":  "+ meanLogLiki.error();
+    else
+      out[i]=meanLogLiki.value();
   }
+  return out;
+}
 
-  friend void report(std::size_t iter, save_Evidence &s,
-                     thermo_mcmc<Parameters> const &data) {
-    if (iter % s.save_every == 0) {
-
-      auto meanLik = mean_logL(data);
-      auto meanPrior = mean_logP(data);
-
-      auto varLik = var_logL(data, meanLik);
-      if (data.beta[0] == 1) {
-        auto Evidence2 = calculate_Evidence(data.beta, meanLik, varLik);
-        auto Evidence1 = calculate_Evidence(data.beta, meanLik);
-        for (std::size_t i_beta = 0; i_beta < num_betas(data); ++i_beta)
-          s.f << num_betas(data) << s.sep << iter << s.sep << data.beta[i_beta]
-              << s.sep << meanPrior[i_beta] << s.sep << meanLik[i_beta] << s.sep
-              << varLik[i_beta] << s.sep << Evidence1 << s.sep << Evidence2
-              << "\n";
-      }
-    }
-  }
-
-  template <class Model, class Variables, class DataType>
-  friend void report_model(save_Evidence &s,Model &model, const DataType &y,
-                           const Variables &x, by_beta<double> const &beta0) {
-
-    auto expected_Evidence= bayesian_linear_regression_calculate_Evidence(model,y,x);
-
-    auto meanLik = bayesian_linear_regression_calculate_mean_logLik(model,y,x,beta0);
-    if (meanLik&& expected_Evidence)
-    for (std::size_t i_beta = 0; i_beta < size(beta0); ++i_beta)
-      s.f<< 0 << s.sep << 0 << s.sep  << beta0[i_beta]<< s.sep
-            << 0 << s.sep << meanLik.value()[i_beta] << s.sep << 0 << s.sep
-            << expected_Evidence << s.sep << expected_Evidence<< "\n";
-  }
-
-};
 
 class save_Parameter {
 
@@ -699,10 +663,9 @@ public:
         << "par_value"
         << "\n";
   }
-  template <class Model, class Variables, class DataType>
-  friend void report_model(save_Parameter &,Model &, const DataType &,
-                    const Variables &, by_beta<double> const &) {
-  }
+  template <class Prior, class Likelihood, class Variables, class DataType>
+  friend void report_model(save_Parameter &, const Prior&, const Likelihood&, const DataType &,
+                           const Variables &, by_beta<double> const &) {}
 
   friend void report(std::size_t iter, save_Parameter &s,
                      thermo_mcmc<Parameters> const &data) {
@@ -740,95 +703,16 @@ public:
                      thermo_mcmc<Parameters> const &data) {
     (report(iter, static_cast<saving &>(f), data), ..., 1);
   }
-  template <class Model, class Variables, class DataType>
-  friend void report_model(save_mcmc &s,Model &model, const DataType &y,
-                     const Variables &x, by_beta<double> const &beta0) {
-    (report_model(static_cast<saving &>(s), model,y,x,beta0), ..., 1);
+  template <class Prior, class Likelihood, class Variables, class DataType>
+  friend void report_model(save_mcmc &s, Prior const &prior, Likelihood const& lik, const DataType &y,
+                           const Variables &x, by_beta<double> const &beta0) {
+    (report_model(static_cast<saving &>(s), prior, lik, y, x, beta0), ..., 1);
   }
   friend void report_title(save_mcmc &f, thermo_mcmc<Parameters> const &data) {
     (report_title(static_cast<saving &>(f), data), ..., 1);
   }
 };
 
-template <class Algorithm, class Model, class Variables, class DataType,
-          class Reporter,
-          class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_Algorithm_conditions<Algorithm, thermo_mcmc> &&
-           is_model<Model, Parameters, Variables, DataType>)
 
-auto thermo_impl(const Algorithm &alg, Model &model, const DataType &y,
-                 const Variables &x, Reporter rep,
-                 std::size_t num_scouts_per_ensemble,
-                 std::size_t thermo_jumps_every, double n_points_per_decade,
-                 double stops_at, bool includes_zero, std::size_t initseed) {
-
-  auto a = alg;
-  auto mt = init_mt(initseed);
-  auto n_walkers = num_scouts_per_ensemble;
-  auto mts = init_mts(mt, num_scouts_per_ensemble / 2);
-  auto beta = get_beta_list(n_points_per_decade, stops_at, includes_zero);
-
-  auto beta_run = by_beta<double>(beta.rend() - 2, beta.rend());
-  auto current = init_thermo_mcmc(n_walkers, beta_run, mts, model, y, x);
-  auto n_par = current.walkers[0][0].parameter.size();
-  auto mcmc_run = checks_convergence(std::move(a), current);
-  std::size_t iter = 0;
-  report_title(rep, current);
-  report_model(rep,model,y,x, beta);
-
-  while (beta_run.size() < beta.size() || !mcmc_run.second) {
-    while (!mcmc_run.second) {
-      step_stretch_thermo_mcmc(iter, current, rep, beta_run, mts, model, y, x);
-      thermo_jump_mcmc(iter, current, rep, beta_run, mt, mts,
-                       thermo_jumps_every);
-      report(iter, rep, current);
-      mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
-    }
-    if (beta_run.size() < beta.size()) {
-      beta_run.insert(beta_run.begin(), beta[beta_run.size()]);
-      current = push_back_new_beta(iter, current, mts, beta_run, model, y, x);
-      std::cerr << "\n  beta_run=" << beta_run[0] << "\n";
-      mcmc_run = checks_convergence(std::move(mcmc_run.first), current);
-    }
-  }
-
-  return std::pair(mcmc_run, current);
-}
-
-template <class Model, class Variables, class DataType,
-          class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
-auto thermo_max_iter(Model model, const DataType &y, const Variables &x,
-                     std::string path, std::string filename,
-                     std::size_t num_scouts_per_ensemble,
-                     std::size_t thermo_jumps_every, std::size_t max_iter,
-                     double n_points_per_decade, double stops_at,
-                     bool includes_zero, std::size_t initseed) {
-  return thermo_impl(less_than_max_iteration(max_iter), model, y, x,
-                     save_mcmc<save_likelihood, save_Parameter, save_Evidence>(
-                         path, filename, 10ul, 10ul, 10ul),
-                     num_scouts_per_ensemble, thermo_jumps_every,
-                     n_points_per_decade, stops_at, includes_zero, initseed);
-}
-
-template <class Model, class Variables, class DataType,
-          class Parameters = std::decay_t<decltype(sample(
-              std::declval<std::mt19937_64 &>(), std::declval<Model &>()))>>
-  requires(is_model<Model, Parameters, Variables, DataType>)
-auto thermo_convergence(Model model, const DataType &y, const Variables &x,
-                        std::string path, std::string filename,
-                        std::size_t num_scouts_per_ensemble,
-                        std::size_t thermo_jumps_every, std::size_t max_iter,
-                        double n_points_per_decade, double stops_at,
-                        bool includes_zero, std::size_t initseed) {
-  return thermo_impl(
-      checks_derivative_var_ratio<thermo_mcmc>(max_iter * model.size()), model,
-      y, x,
-      save_mcmc<save_likelihood, save_Parameter, save_Evidence>(path, filename, 10ul, 100ul,10ul),
-      num_scouts_per_ensemble, thermo_jumps_every, n_points_per_decade,
-      stops_at, includes_zero, initseed);
-}
 
 #endif // PARALLEL_TEMPERING_H
